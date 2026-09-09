@@ -1,0 +1,18 @@
+menu "Status Indicator Service Configuration"
+
+    config SVC_STATUS_ENABLE
+        bool "Enable device status indicator service"
+        default y
+        depends on DRV_LED_ENABLE
+        help
+            Heartbeat LED service. Blinks the status LED periodically to show
+            the firmware is running, and exposes the 'led' console command.
+
+    config SVC_STATUS_HEARTBEAT_MS
+        int "Heartbeat half-period (ms)"
+        default 1000
+        depends on SVC_STATUS_ENABLE
+        help
+            LED toggles every N ms. 1000 ms means a full on/off period of 2 s.
+
+endmenu

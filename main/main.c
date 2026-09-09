@@ -15,6 +15,7 @@
 #include "console_cmd.h"
 #include "svc_pan_tilt.h"
 #include "svc_wifi.h"
+#include "svc_status.h"
 
 #if CONFIG_DRV_DISPLAY_ENABLE
 #include "drv_display.h"
@@ -59,6 +60,12 @@ static void app_init(void)
     ESP_ERROR_CHECK(console_cmd_init());
 
     /* 3. Service 层：init + start（按依赖顺序） */
+    /* 状态灯最先启动：开始心跳闪烁，表示固件已进入业务初始化阶段 */
+#if CONFIG_SVC_STATUS_ENABLE
+    ESP_ERROR_CHECK(svc_status_init());
+    ESP_ERROR_CHECK(svc_status_start());
+#endif
+
     ESP_ERROR_CHECK(svc_pan_tilt_init());
     ESP_ERROR_CHECK(svc_pan_tilt_start());
 
@@ -78,6 +85,9 @@ static void app_init(void)
 #endif
 
     /* 5. 注册所有组件的控制台命令 */
+#if CONFIG_SVC_STATUS_ENABLE
+    svc_status_register_console_cmds();
+#endif
     svc_pan_tilt_register_console_cmds();
     svc_wifi_register_console_cmds();
 #if CONFIG_DRV_DISPLAY_ENABLE

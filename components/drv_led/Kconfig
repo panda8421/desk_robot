@@ -1,0 +1,18 @@
+menu "Status LED Driver Configuration"
+
+    config DRV_LED_ENABLE
+        bool "Enable status LED driver"
+        default y
+        help
+            Compile the GPIO status LED driver into firmware.
+            LED pin is defined in board.h (BOARD_LED_STATUS_GPIO).
+
+    config DRV_LED_ACTIVE_LOW
+        bool "LED is active-low (LED cathode connected to GPIO)"
+        default y
+        depends on DRV_LED_ENABLE
+        help
+            Set this when the LED anode is tied to VCC through a resistor
+            and the GPIO sinks current (output low = LED on), as on this board.
+
+endmenu

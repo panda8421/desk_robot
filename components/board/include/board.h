@@ -17,6 +17,9 @@ extern "C" {
 #define BOARD_SERVO_PAN_GPIO        GPIO_NUM_4   /* 水平舵机 PWM 输出 */
 #define BOARD_SERVO_TILT_GPIO       GPIO_NUM_5   /* 俯仰舵机 PWM 输出 */
 
+/* ============== 状态指示灯（红色 LED，接 IO1，低电平点亮） ============== */
+#define BOARD_LED_STATUS_GPIO       GPIO_NUM_1
+
 /* ============== 预留：显示屏引脚（后续填充） ============== */
 /* #define BOARD_DISPLAY_SCLK_GPIO    GPIO_NUM_XX */
 /* #define BOARD_DISPLAY_MOSI_GPIO    GPIO_NUM_XX */
