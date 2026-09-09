@@ -1,12 +1,17 @@
 #include "svc_pan_tilt.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_event.h"
+#include "esp_console.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "app_events.h"
 #include "drv_servo_pwm.h"
+#include "console_cmd.h"
 
 static const char *TAG = "svc_pan_tilt";
 
@@ -90,6 +95,10 @@ esp_err_t svc_pan_tilt_init(void)
     };
     ESP_ERROR_CHECK(drv_servo_pwm_init(&servo_cfg));
 
+    /* 显式把归位角度下发到底层（与驱动默认中点一致，确保服务状态为唯一事实来源） */
+    ESP_ERROR_CHECK(drv_servo_pwm_set_angle(SERVO_CH_PAN, s_ctx.current.pan));
+    ESP_ERROR_CHECK(drv_servo_pwm_set_angle(SERVO_CH_TILT, s_ctx.current.tilt));
+
     s_ctx.initialized = true;
     ESP_LOGI(TAG, "init done, home pan=%d tilt=%d", s_ctx.current.pan, s_ctx.current.tilt);
     return ESP_OK;
@@ -124,9 +133,77 @@ esp_err_t svc_pan_tilt_deinit(void)
     return ESP_OK;
 }
 
+/* ---- 控制台命令：pt set <pan> <tilt> | pt home | pt status ---- */
+static void print_usage(void)
+{
+    printf("usage:\n"
+           "  pt set <pan> <tilt>   set target angles (deg)\n"
+           "  pt home               move to center position\n"
+           "  pt status             show current/target angles\n");
+}
+
+static int cmd_pt(int argc, char **argv)
+{
+    if (argc < 2) {
+        print_usage();
+        return 1;
+    }
+
+    if (strcmp(argv[1], "set") == 0) {
+        if (argc != 4) {
+            print_usage();
+            return 1;
+        }
+        int16_t pan  = (int16_t)strtol(argv[2], NULL, 10);
+        int16_t tilt = (int16_t)strtol(argv[3], NULL, 10);
+        esp_err_t err = svc_pan_tilt_set_target(pan, tilt);
+        if (err != ESP_OK) {
+            printf("set failed: %s\n", esp_err_to_name(err));
+            return 1;
+        }
+        printf("ok, moving to pan=%d tilt=%d\n", pan, tilt);
+        return 0;
+    }
+
+    if (strcmp(argv[1], "home") == 0) {
+        int16_t pan  = (CONFIG_SVC_PAN_TILT_PAN_MIN + CONFIG_SVC_PAN_TILT_PAN_MAX) / 2;
+        int16_t tilt = (CONFIG_SVC_PAN_TILT_TILT_MIN + CONFIG_SVC_PAN_TILT_TILT_MAX) / 2;
+        esp_err_t err = svc_pan_tilt_set_target(pan, tilt);
+        if (err != ESP_OK) {
+            printf("home failed: %s\n", esp_err_to_name(err));
+            return 1;
+        }
+        printf("ok, going home pan=%d tilt=%d\n", pan, tilt);
+        return 0;
+    }
+
+    if (strcmp(argv[1], "status") == 0) {
+        pan_tilt_angle_t cur, tgt;
+        if (svc_pan_tilt_get_current(&cur) != ESP_OK) {
+            printf("service not ready\n");
+            return 1;
+        }
+        tgt = s_ctx.target;
+        printf("pan:  current=%d target=%d%s\n",
+               cur.pan, tgt.pan, s_ctx.moving ? " (moving)" : "");
+        printf("tilt: current=%d target=%d\n", cur.tilt, tgt.tilt);
+        return 0;
+    }
+
+    print_usage();
+    return 1;
+}
+
 void svc_pan_tilt_register_console_cmds(void)
 {
-    /* TODO: 注册 "pt set <pan> <tilt>" / "pt home" / "pt status" 命令 */
+    const esp_console_cmd_t cmd = {
+        .command = "pt",
+        .help = "Pan-Tilt control: pt set <pan> <tilt> | pt home | pt status",
+        .func = cmd_pt,
+    };
+    if (console_cmd_add(&cmd) != ESP_OK) {
+        ESP_LOGW(TAG, "register 'pt' cmd failed");
+    }
 }
 
 esp_err_t svc_pan_tilt_set_target(int16_t pan, int16_t tilt)
