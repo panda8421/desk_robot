@@ -1,0 +1,30 @@
+menu "WiFi Service Configuration"
+
+    config SVC_WIFI_ENABLE
+        bool "Enable WiFi service"
+        default y
+        help
+            Compile the WiFi STA connection manager.
+
+    config SVC_WIFI_SSID
+        string "WiFi SSID"
+        default "YOUR_WIFI_SSID"
+        depends on SVC_WIFI_ENABLE
+        help
+            Target WiFi network SSID.
+
+    config SVC_WIFI_PASSWORD
+        string "WiFi password"
+        default "YOUR_WIFI_PASSWORD"
+        depends on SVC_WIFI_ENABLE
+        help
+            Target WiFi password.
+
+    config SVC_WIFI_MAX_RETRY
+        int "Max connection retries"
+        default 5
+        depends on SVC_WIFI_ENABLE
+        help
+            Number of retries before giving up.
+
+endmenu

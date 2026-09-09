@@ -1,0 +1,24 @@
+# ===== ESP-IDF 构建产物 =====
+build/
+
+# ===== 生成的 sdkconfig（由 sdkconfig.defaults 重新生成，不入库） =====
+sdkconfig
+sdkconfig.old
+sdkconfig.ci
+
+# ===== 组件管理器自动拉取的依赖（不入库） =====
+managed_components/
+dependencies.lock
+
+# ===== 编辑器 / IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cproject
+.project
+
+# ===== 操作系统杂项 =====
+.DS_Store
+Thumbs.db

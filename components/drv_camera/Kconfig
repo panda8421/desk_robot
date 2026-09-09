@@ -1,0 +1,17 @@
+menu "Camera Driver Configuration"
+
+    config DRV_CAMERA_ENABLE
+        bool "Enable camera driver (DVP)"
+        default n
+        help
+            Compile the DVP camera driver into firmware.
+            Requires PSRAM. Set to 'y' after selecting a camera sensor.
+
+    config DRV_CAMERA_SENSOR
+        string "Camera sensor model"
+        default "UNDEFINED"
+        depends on DRV_CAMERA_ENABLE
+        help
+            Camera sensor IC, e.g. OV2640, OV5640.
+
+endmenu

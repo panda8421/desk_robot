@@ -1,0 +1,17 @@
+menu "Display Driver Configuration"
+
+    config DRV_DISPLAY_ENABLE
+        bool "Enable display driver"
+        default n
+        help
+            Compile the display driver into firmware.
+            Set to 'y' after selecting a display IC (OLED / LCD / E-ink).
+
+    config DRV_DISPLAY_TYPE
+        string "Display IC model"
+        default "UNDEFINED"
+        depends on DRV_DISPLAY_ENABLE
+        help
+            Display controller IC, e.g. SSD1306, ST7789, ILI9341.
+
+endmenu

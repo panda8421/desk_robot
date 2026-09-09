@@ -1,0 +1,16 @@
+menu "Diagnostics Configuration"
+
+    config DIAG_ENABLE
+        bool "Enable runtime diagnostics"
+        default y
+        help
+            Periodically collect memory / task stats.
+
+    config DIAG_INTERVAL_SEC
+        int "Snapshot interval (seconds)"
+        default 30
+        depends on DIAG_ENABLE
+        help
+            Period between automatic memory snapshots.
+
+endmenu

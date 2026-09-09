@@ -1,0 +1,6 @@
+#include "app_events.h"
+
+/* 事件 base 定义（声明在 app_events.h） */
+ESP_EVENT_DEFINE_BASE(PAN_TILT_EVENT);
+ESP_EVENT_DEFINE_BASE(APP_WIFI_EVENT);
+ESP_EVENT_DEFINE_BASE(SERVO_EVENT);

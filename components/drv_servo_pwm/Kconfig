@@ -1,0 +1,30 @@
+menu "Servo PWM Driver Configuration"
+
+    config DRV_SERVO_PWM_ENABLE
+        bool "Enable PWM servo driver (MCPWM)"
+        default y
+        help
+            Compile the PWM servo driver into firmware. Disable if no servo is used.
+
+    config DRV_SERVO_PWM_PWM_FREQ_HZ
+        int "PWM frequency (Hz)"
+        default 50
+        depends on DRV_SERVO_PWM_ENABLE
+        help
+            Standard analog servos use 50 Hz (20 ms period).
+
+    config DRV_SERVO_PWM_MIN_PULSE_US
+        int "Minimum pulse width (us, 0 deg)"
+        default 500
+        depends on DRV_SERVO_PWM_ENABLE
+        help
+            Pulse width corresponding to 0 degree. Typical: 500-1000 us.
+
+    config DRV_SERVO_PWM_MAX_PULSE_US
+        int "Maximum pulse width (us, 180 deg)"
+        default 2500
+        depends on DRV_SERVO_PWM_ENABLE
+        help
+            Pulse width corresponding to 180 degree. Typical: 2000-2500 us.
+
+endmenu

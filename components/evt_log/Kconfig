@@ -1,0 +1,16 @@
+menu "Event Log (Black Box) Configuration"
+
+    config EVT_LOG_ENABLE
+        bool "Enable event black box"
+        default y
+        help
+            Persist key events to NVS ring buffer across reboots.
+
+    config EVT_LOG_RING_SIZE
+        int "Ring buffer entries"
+        default 64
+        depends on EVT_LOG_ENABLE
+        help
+            Number of event entries kept in NVS ring buffer.
+
+endmenu

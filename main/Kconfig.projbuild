@@ -1,0 +1,15 @@
+menu "Project Configuration"
+
+    config PROJ_NAME
+        string "Project name"
+        default "desktop_robot"
+        help
+            Name of this project.
+
+    config PROJ_VERSION
+        string "Project version"
+        default "0.1.0"
+        help
+            Semantic version of the firmware.
+
+endmenu

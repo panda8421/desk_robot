@@ -1,0 +1,56 @@
+menu "Pan-Tilt Service Configuration"
+
+    config SVC_PAN_TILT_ENABLE
+        bool "Enable Pan-Tilt service"
+        default y
+        help
+            Compile the Pan-Tilt (云台) motion orchestration service.
+
+    config SVC_PAN_TILT_TASK_STACK_SIZE
+        int "Task stack size (bytes)"
+        default 3072
+        depends on SVC_PAN_TILT_ENABLE
+        help
+            Stack size of the pan-tilt interpolation task.
+
+    config SVC_PAN_TILT_TASK_PRIORITY
+        int "Task priority"
+        default 5
+        range 1 25
+        depends on SVC_PAN_TILT_ENABLE
+
+    config SVC_PAN_TILT_PAN_MIN
+        int "Pan min angle (deg)"
+        default 0
+        depends on SVC_PAN_TILT_ENABLE
+
+    config SVC_PAN_TILT_PAN_MAX
+        int "Pan max angle (deg)"
+        default 180
+        depends on SVC_PAN_TILT_ENABLE
+
+    config SVC_PAN_TILT_TILT_MIN
+        int "Tilt min angle (deg)"
+        default 0
+        depends on SVC_PAN_TILT_ENABLE
+
+    config SVC_PAN_TILT_TILT_MAX
+        int "Tilt max angle (deg)"
+        default 180
+        depends on SVC_PAN_TILT_ENABLE
+
+    config SVC_PAN_TILT_STEP_DEG
+        int "Interpolation step (deg per tick)"
+        default 2
+        depends on SVC_PAN_TILT_ENABLE
+        help
+            Degrees to move per interpolation tick. Smaller = smoother but slower.
+
+    config SVC_PAN_TILT_TICK_MS
+        int "Interpolation tick period (ms)"
+        default 20
+        depends on SVC_PAN_TILT_ENABLE
+        help
+            Period between interpolation updates.
+
+endmenu
