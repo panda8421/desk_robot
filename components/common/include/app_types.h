@@ -28,6 +28,18 @@ typedef struct {
 
 /* ---- 通用结果码（ESP-IDF 已提供 esp_err_t，此处仅补充业务语义枚举） ---- */
 
+/* ---- 对话文本消息载荷（esp_event 值传递） ---- */
+#define CHAT_TEXT_MAX_LEN   256
+typedef struct {
+    char text[CHAT_TEXT_MAX_LEN];   /* UTF-8 文本（ASR 识别结果 / LLM 回复） */
+} chat_text_t;
+
+/* ---- 云端链路错误载荷（esp_event 值传递） ---- */
+typedef struct {
+    int32_t code;                   /* esp_err_t 或 HTTP 状态码（负值） */
+    char    stage;                  /* 出错环节：'a'=ASR 'l'=LLM 't'=TTS */
+} chat_err_info_t;
+
 #ifdef __cplusplus
 }
 #endif

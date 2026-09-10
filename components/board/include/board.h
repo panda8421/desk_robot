@@ -8,6 +8,7 @@
 
 #include "esp_err.h"
 #include "driver/gpio.h"
+#include "driver/i2c_master.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,6 +20,29 @@ extern "C" {
 
 /* ============== 状态指示灯（红色 LED，接 IO1，低电平点亮） ============== */
 #define BOARD_LED_STATUS_GPIO       GPIO_NUM_1
+
+/* ============== I2C0 共享总线（ES8388 / XL9555 / AP3216C / 24C02） ============== */
+#define BOARD_I2C0_SDA_GPIO         GPIO_NUM_41
+#define BOARD_I2C0_SCL_GPIO         GPIO_NUM_42
+#define BOARD_I2C0_FREQ_HZ          100000       /* 共享总线保守速率 */
+
+/* ============== XL9555 IO 扩展芯片（P0/P1 口分配，见硬件手册） ============== */
+#define BOARD_XL9555_I2C_ADDR       0x20         /* 7 位从机地址 A2A1A0=000 */
+#define BOARD_XL9555_PIN_SPK_EN     0            /* P00: 喇叭功放使能，高有效 */
+#define BOARD_XL9555_PIN_USB_SEL    1            /* P01: USB 切换（本工程不使用） */
+#define BOARD_XL9555_PIN_BEEP       3            /* P03: 有源蜂鸣器，高电平鸣叫 */
+#define BOARD_XL9555_PIN_KEY0       4            /* P04: KEY0，低电平有效 */
+#define BOARD_XL9555_PIN_KEY1       5            /* P05: KEY1，低电平有效 */
+#define BOARD_XL9555_PIN_KEY2       6            /* P06: KEY2，低电平有效 */
+#define BOARD_XL9555_PIN_KEY3       7            /* P07: KEY3，低电平有效 */
+
+/* ============== I2S 音频（ES8388 Codec，全双工） ============== */
+#define BOARD_I2S_MCLK_GPIO         GPIO_NUM_3   /* 主时钟 */
+#define BOARD_I2S_SCK_GPIO          GPIO_NUM_46  /* 位时钟 */
+#define BOARD_I2S_LRCK_GPIO         GPIO_NUM_9   /* 帧时钟 */
+#define BOARD_I2S_SDIN_GPIO         GPIO_NUM_10  /* 录音数据（ES8388 ADC -> S3） */
+#define BOARD_I2S_SDOUT_GPIO        GPIO_NUM_14  /* 播放数据（S3 -> ES8388 DAC） */
+#define BOARD_ES8388_I2C_ADDR       0x10         /* ES8388 7 位从机地址 */
 
 /* ============== 预留：显示屏引脚（后续填充） ============== */
 /* #define BOARD_DISPLAY_SCLK_GPIO    GPIO_NUM_XX */
@@ -35,6 +59,26 @@ extern "C" {
  * @return ESP_OK / 错误码
  */
 esp_err_t board_init(void);
+
+/* ============== I2C0 共享总线管理（多设备共用，事务级互斥） ============== */
+/**
+ * @brief  初始化 I2C0 总线与互斥锁（board_init 内部自动调用）
+ * @return ESP_OK / 错误码
+ */
+esp_err_t board_i2c_init(void);
+
+/**
+ * @brief  获取 I2C0 总线句柄（各驱动用它挂载自己的设备）
+ * @return 总线句柄，未初始化返回 NULL
+ */
+i2c_master_bus_handle_t board_i2c_bus(void);
+
+/**
+ * @brief  加锁/解锁：保护"写寄存器地址+读数据"这类多事务原子序列
+ * @note   单次 i2c_master 事务驱动内部已串行化，复合序列必须持锁
+ */
+void board_i2c_lock(void);
+void board_i2c_unlock(void);
 
 #ifdef __cplusplus
 }

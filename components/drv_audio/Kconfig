@@ -1,0 +1,10 @@
+menu "I2S Audio Data Path Driver Configuration"
+
+    config DRV_AUDIO_ENABLE
+        bool "Enable I2S full-duplex audio driver"
+        default y
+        help
+            Compile the I2S standard-mode full-duplex driver (16kHz/16bit/mono).
+            I2S pins are defined in board.h (BOARD_I2S_xxx).
+
+endmenu

@@ -16,6 +16,9 @@ extern "C" {
 ESP_EVENT_DECLARE_BASE(PAN_TILT_EVENT);
 ESP_EVENT_DECLARE_BASE(APP_WIFI_EVENT);
 ESP_EVENT_DECLARE_BASE(SERVO_EVENT);
+ESP_EVENT_DECLARE_BASE(KEY_EVENT);
+ESP_EVENT_DECLARE_BASE(AUDIO_EVENT);   /* svc_audio 发布 */
+ESP_EVENT_DECLARE_BASE(CHAT_EVENT);    /* svc_ai_chat 发布 */
 
 /* ============== PAN_TILT_EVENT ============== */
 typedef enum {
@@ -43,6 +46,48 @@ typedef enum {
     /* arg: NULL，舵机驱动初始化完成 */
     SERVO_READY,
 } servo_event_id_t;
+
+/* ============== KEY_EVENT（drv_xl9555 发布，按键消抖后触发） ============== */
+typedef enum {
+    /* arg: uint8_t*（按键号 0~3，值传递） */
+    KEY_PRESSED,
+
+    /* arg: uint8_t*（按键号 0~3，值传递） */
+    KEY_RELEASED,
+} key_event_id_t;
+
+/* ============== AUDIO_EVENT（svc_audio → 对话状态机） ============== */
+typedef enum {
+    /* arg: NULL —— 唤醒词命中（P2 预留，P1 不发布） */
+    AUDIO_WAKE_WORD_DETECTED,
+
+    /* arg: NULL —— VAD 检测到开始说话（录音中） */
+    AUDIO_VAD_SPEECH_START,
+
+    /* arg: NULL —— VAD 断句（一段话说完），录音数据可通过 API 获取 */
+    AUDIO_VAD_SPEECH_END,
+
+    /* arg: NULL —— 一段音频播放完成（含被打断后清空） */
+    AUDIO_PLAYBACK_DONE,
+
+    /* arg: int32_t*（错误码，值传递） —— 音频子系统错误 */
+    AUDIO_ERROR,
+} audio_event_id_t;
+
+/* ============== CHAT_EVENT（svc_ai_chat → 对话状态机） ============== */
+typedef enum {
+    /* arg: chat_text_t*（识别文本，值传递） */
+    CHAT_ASR_RESULT,
+
+    /* arg: chat_text_t*（LLM 完整回复文本，值传递） */
+    CHAT_LLM_REPLY,
+
+    /* arg: NULL —— TTS 音频已就绪/开始可播（P1 中 TTS 完成后发布） */
+    CHAT_TTS_READY,
+
+    /* arg: chat_err_info_t*（值传递） —— 云端链路错误 */
+    CHAT_ERROR,
+} chat_event_id_t;
 
 #ifdef __cplusplus
 }

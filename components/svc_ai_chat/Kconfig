@@ -1,0 +1,43 @@
+menu "AI Chat Service Configuration (DashScope)"
+
+    config SVC_AI_CHAT_ENABLE
+        bool "Enable AI chat service (ASR/LLM/TTS pipeline)"
+        default y
+        help
+            Compile the DashScope cloud chat client. API key is stored
+            in NVS via console command "chat setkey".
+
+    config SVC_AI_CHAT_API_BASE
+        string "DashScope OpenAI-compatible API base URL"
+        default "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        depends on SVC_AI_CHAT_ENABLE
+
+    config SVC_AI_CHAT_LLM_MODEL
+        string "LLM model name (chat completions)"
+        default "qwen-turbo"
+        depends on SVC_AI_CHAT_ENABLE
+
+    config SVC_AI_CHAT_ASR_MODEL
+        string "ASR model name (audio input via chat completions)"
+        default "qwen3-asr-flash"
+        depends on SVC_AI_CHAT_ENABLE
+        help
+            Model that accepts input_audio content in chat completions.
+            Check DashScope docs for available ASR models.
+
+    config SVC_AI_CHAT_TTS_MODEL
+        string "TTS model name (audio/speech endpoint)"
+        default "qwen-tts"
+        depends on SVC_AI_CHAT_ENABLE
+
+    config SVC_AI_CHAT_TTS_VOICE
+        string "TTS voice name"
+        default "Cherry"
+        depends on SVC_AI_CHAT_ENABLE
+
+    config SVC_AI_CHAT_SYSTEM_PROMPT
+        string "Robot persona system prompt"
+        default "你是一个桌面小机器人，回答简短、口语化、友好，每次回复尽量不超过两句话。"
+        depends on SVC_AI_CHAT_ENABLE
+
+endmenu

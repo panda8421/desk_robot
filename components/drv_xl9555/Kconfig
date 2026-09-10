@@ -1,0 +1,20 @@
+menu "XL9555 IO Expander Driver Configuration"
+
+    config DRV_XL9555_ENABLE
+        bool "Enable XL9555 IO expander driver"
+        default y
+        help
+            Compile the XL9555 (PCA9555 compatible) IO expander driver.
+            Used for onboard KEY0~3 scan, beeper and speaker PA enable.
+            I2C bus is managed by board layer (BOARD_I2C0_xxx in board.h).
+
+    config DRV_XL9555_SCAN_PERIOD_MS
+        int "Key scan period (ms)"
+        default 20
+        range 5 200
+        depends on DRV_XL9555_ENABLE
+        help
+            Period of the key scan task. 20ms gives good debounce
+            with 2 consecutive confirmations.
+
+endmenu

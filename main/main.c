@@ -16,6 +16,9 @@
 #include "svc_pan_tilt.h"
 #include "svc_wifi.h"
 #include "svc_status.h"
+#include "svc_audio.h"
+#include "svc_ai_chat.h"
+#include "conversation.h"
 
 #if CONFIG_DRV_DISPLAY_ENABLE
 #include "drv_display.h"
@@ -98,6 +101,10 @@ static void app_init(void)
 #endif
     evt_log_register_console_cmds();
     diag_register_console_cmds();
+
+    /* 7. 启动语音服务（功放/按键扫描/I2S 就绪；对话等 WiFi 就绪后开放） */
+    ESP_ERROR_CHECK(svc_audio_start());
+    ESP_ERROR_CHECK(svc_ai_chat_start());
 
     ESP_LOGI(TAG, "app init done");
 }

@@ -1,0 +1,29 @@
+menu "Audio Frontend Service Configuration"
+
+    config SVC_AUDIO_ENABLE
+        bool "Enable audio frontend service (VAD/record/play)"
+        default y
+        help
+            Compile the audio frontend service. Depends on drv_audio,
+            drv_es8388 and drv_xl9555 drivers.
+
+    config SVC_AUDIO_VAD_THRESHOLD
+        int "VAD energy threshold (RMS)"
+        default 400
+        range 50 10000
+        depends on SVC_AUDIO_ENABLE
+        help
+            RMS energy threshold for speech detection. Lower for quiet
+            environments, higher for noisy ones. Tunable at runtime
+            via console command "audio thr".
+
+    config SVC_AUDIO_SILENCE_MS
+        int "Silence duration to end speech (ms)"
+        default 800
+        range 200 3000
+        depends on SVC_AUDIO_ENABLE
+        help
+            Continuous silence duration after speech that ends an
+            utterance (endpointing delay).
+
+endmenu

@@ -1,0 +1,10 @@
+menu "ES8388 Audio Codec Driver Configuration"
+
+    config DRV_ES8388_ENABLE
+        bool "Enable ES8388 audio codec driver"
+        default y
+        help
+            Compile the ES8388 codec register-configuration driver.
+            Codec address and I2C bus are defined in board.h.
+
+endmenu
