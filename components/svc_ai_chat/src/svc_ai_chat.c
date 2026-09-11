@@ -122,6 +122,8 @@ static esp_err_t http_post(const char *url, const char *body,
     snprintf(auth, sizeof(auth), "Bearer %s", s_ctx.api_key);
     ESP_ERROR_CHECK(esp_http_client_set_header(client, "Authorization", auth));
     ESP_ERROR_CHECK(esp_http_client_set_header(client, "Content-Type", "application/json"));
+    /* open/write 流式写法不会自动切换方法，必须显式指定 POST，否则默认 GET */
+    ESP_ERROR_CHECK(esp_http_client_set_method(client, HTTP_METHOD_POST));
 
     esp_err_t ret = ESP_FAIL;
     int status = -1;
@@ -320,11 +322,14 @@ static esp_err_t do_asr(const int16_t *pcm, size_t samples)
     /* 5. 解析响应 */
     cJSON *jresp = cJSON_Parse((const char *)resp);
     if (jresp == NULL) {
+        ESP_LOGE(TAG, "asr resp unparsable (len=%u): %.*s",
+                 (unsigned)resp_len, (int)(resp_len > 512 ? 512 : resp_len), (const char *)resp);
         ret = ESP_ERR_INVALID_RESPONSE;
         goto cleanup_resp;
     }
-    cJSON *text_item = cJSON_GetObjectItem(
-        cJSON_GetObjectItem(cJSON_GetObjectItem(jresp, "choices"), 0), "message");
+    /* choices 是 JSON 数组，必须用 cJSON_GetArrayItem 按下标取 */
+    cJSON *choice0 = cJSON_GetArrayItem(cJSON_GetObjectItem(jresp, "choices"), 0);
+    cJSON *text_item = choice0 ? cJSON_GetObjectItem(choice0, "message") : NULL;
     const char *text = text_item ? cJSON_GetStringValue(
         cJSON_GetObjectItem(text_item, "content")) : NULL;
     if (text == NULL) {
@@ -411,13 +416,17 @@ static esp_err_t do_llm_and_tts(const char *user_text)
 
     cJSON *jresp = cJSON_Parse((const char *)resp);
     if (jresp == NULL) {
+        ESP_LOGE(TAG, "llm resp unparsable (len=%u): %.*s",
+                 (unsigned)resp_len, (int)(resp_len > 512 ? 512 : resp_len), (const char *)resp);
         ret = ESP_ERR_INVALID_RESPONSE;
         goto cleanup_resp;
     }
-    cJSON *choice0 = cJSON_GetObjectItem(cJSON_GetObjectItem(jresp, "choices"), 0);
+    cJSON *choice0 = cJSON_GetArrayItem(cJSON_GetObjectItem(jresp, "choices"), 0);
     const char *reply = cJSON_GetStringValue(cJSON_GetObjectItem(
         cJSON_GetObjectItem(choice0, "message"), "content"));
     if (reply == NULL || strlen(reply) == 0) {
+        ESP_LOGE(TAG, "llm resp missing content (len=%u): %.*s",
+                 (unsigned)resp_len, (int)(resp_len > 512 ? 512 : resp_len), (const char *)resp);
         ret = ESP_ERR_INVALID_RESPONSE;
         cJSON_Delete(jresp);
         goto cleanup_resp;

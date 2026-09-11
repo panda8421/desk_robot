@@ -5,6 +5,7 @@
 #include "esp_check.h"
 #include "esp_wifi.h"
 #include "esp_netif.h"
+#include "esp_netif_ip_addr.h"
 #include "esp_event.h"
 #include "app_events.h"
 
@@ -40,6 +41,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)data;
         s_ctx.retry_cnt = 0;
         ESP_LOGI(TAG, "got ip: " IPSTR, IP2STR(&event->ip_info.ip));
+        /* 路由器下发的 DNS 代理时好时坏，改用公共 DNS（主:阿里 备:114），
+         * 避免偶发 getaddrinfo EAI_NONAME 导致云端请求全部失败 */
+        esp_netif_dns_info_t dns;
+        esp_netif_str_to_ip4("223.5.5.5", &dns.ip.u_addr.ip4);
+        dns.ip.type = ESP_IPADDR_TYPE_V4;
+        esp_netif_set_dns_info(s_ctx.netif, ESP_NETIF_DNS_MAIN, &dns);
+        esp_netif_str_to_ip4("114.114.114.114", &dns.ip.u_addr.ip4);
+        esp_netif_set_dns_info(s_ctx.netif, ESP_NETIF_DNS_BACKUP, &dns);
         esp_event_post(APP_WIFI_EVENT, WIFI_CONNECTED, NULL, 0, 0);
         esp_event_post(APP_WIFI_EVENT, WIFI_GOT_IP, event, sizeof(*event), 0);
     }
