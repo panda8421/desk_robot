@@ -406,9 +406,9 @@ esp_err_t svc_audio_init(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* 底层驱动：IO 扩展（功放/按键）+ Codec 配置 + I2S 通路
-     * （App 层不直接依赖 Driver，xl9555 生命周期由本服务托管） */
-    ESP_ERROR_CHECK(drv_xl9555_init());
+    /* 底层驱动：Codec 配置 + I2S 通路
+     * （App 层不直接依赖 Driver，xl9555 生命周期由 main.c 应用层托管，
+     *   本服务只借用 drv_xl9555_speaker_enable() 控制功放） */
     ESP_ERROR_CHECK(drv_es8388_init());
     ESP_ERROR_CHECK(drv_audio_init(NULL));
 
@@ -438,7 +438,7 @@ esp_err_t svc_audio_start(void)
         return ESP_OK;
     }
 
-    ESP_ERROR_CHECK(drv_xl9555_speaker_enable(true));   /* 打开功放 */
+    ESP_ERROR_CHECK(drv_xl9555_speaker_enable(true));   /* 打开功放（XL9555 已由应用层启动） */
     ESP_ERROR_CHECK(drv_es8388_start());
     ESP_ERROR_CHECK(drv_audio_start());
 

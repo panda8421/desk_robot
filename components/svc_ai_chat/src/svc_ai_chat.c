@@ -24,6 +24,7 @@
 #include "app_events.h"
 #include "app_types.h"
 #include "console_cmd.h"
+#include "drv_audio.h"
 
 static const char *TAG = "svc_ai_chat";
 

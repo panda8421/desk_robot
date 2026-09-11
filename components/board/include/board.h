@@ -28,13 +28,13 @@ extern "C" {
 
 /* ============== XL9555 IO 扩展芯片（P0/P1 口分配，见硬件手册） ============== */
 #define BOARD_XL9555_I2C_ADDR       0x20         /* 7 位从机地址 A2A1A0=000 */
-#define BOARD_XL9555_PIN_SPK_EN     0            /* P00: 喇叭功放使能，高有效 */
-#define BOARD_XL9555_PIN_USB_SEL    1            /* P01: USB 切换（本工程不使用） */
-#define BOARD_XL9555_PIN_BEEP       3            /* P03: 有源蜂鸣器，高电平鸣叫 */
-#define BOARD_XL9555_PIN_KEY0       4            /* P04: KEY0，低电平有效 */
-#define BOARD_XL9555_PIN_KEY1       5            /* P05: KEY1，低电平有效 */
-#define BOARD_XL9555_PIN_KEY2       6            /* P06: KEY2，低电平有效 */
-#define BOARD_XL9555_PIN_KEY3       7            /* P07: KEY3，低电平有效 */
+#define BOARD_XL9555_PIN_SPK_EN     2            /* P02: 喇叭功放使能，低电平有效（官方例程映射） */
+#define BOARD_XL9555_PIN_USB_SEL    1            /* P01: QMA6100P 中断（本工程不使用） */
+#define BOARD_XL9555_PIN_BEEP       3            /* P03: 有源蜂鸣器，低电平鸣叫（实测+官方例程确认） */
+#define BOARD_XL9555_PIN_KEY0       15           /* P17: KEY0，低电平有效（官方例程映射，实测确认） */
+#define BOARD_XL9555_PIN_KEY1       14           /* P16: KEY1，低电平有效 */
+#define BOARD_XL9555_PIN_KEY2       13           /* P15: KEY2，低电平有效 */
+#define BOARD_XL9555_PIN_KEY3       12           /* P14: KEY3，低电平有效 */
 
 /* ============== I2S 音频（ES8388 Codec，全双工） ============== */
 #define BOARD_I2S_MCLK_GPIO         GPIO_NUM_3   /* 主时钟 */

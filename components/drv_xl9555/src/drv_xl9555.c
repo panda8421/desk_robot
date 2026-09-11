@@ -92,12 +92,14 @@ esp_err_t drv_xl9555_write_pin(uint8_t pin, bool level)
 
 esp_err_t drv_xl9555_beep(bool on)
 {
-    return drv_xl9555_write_pin(BOARD_XL9555_PIN_BEEP, on);
+    /* BEEP 低电平鸣叫（实测+正点原子官方例程确认），故取反输出 */
+    return drv_xl9555_write_pin(BOARD_XL9555_PIN_BEEP, !on);
 }
 
 esp_err_t drv_xl9555_speaker_enable(bool on)
 {
-    return drv_xl9555_write_pin(BOARD_XL9555_PIN_SPK_EN, on);
+    /* SPK_EN 低电平使能功放（正点原子官方例程确认），故取反输出 */
+    return drv_xl9555_write_pin(BOARD_XL9555_PIN_SPK_EN, !on);
 }
 
 /* ============== 按键扫描（独立任务，20ms 周期） ============== */
@@ -119,11 +121,23 @@ static void key_post(key_event_id_t id, uint8_t key)
 static void key_scan_task(void *arg)
 {
     (void)arg;
+    /* KEY0~3 在 P1 口（P17~P14），低电平有效；预计算各键在口内的位掩码 */
+    static const uint8_t key_bit[KEY_NUM] = {
+        (uint8_t)(1u << (BOARD_XL9555_PIN_KEY0 % 8)),
+        (uint8_t)(1u << (BOARD_XL9555_PIN_KEY1 % 8)),
+        (uint8_t)(1u << (BOARD_XL9555_PIN_KEY2 % 8)),
+        (uint8_t)(1u << (BOARD_XL9555_PIN_KEY3 % 8)),
+    };
     while (s_ctx.running) {
         uint8_t raw = 0;
-        if (reg_read(REG_INPUT_PORT0, &raw) == ESP_OK) {
-            /* KEY0~3 在 P04~P07，低电平有效；整理成 bit0~3 的"按下=1"位图 */
-            uint8_t now = (uint8_t)(~(raw >> BOARD_XL9555_PIN_KEY0) & 0x0F);
+        if (reg_read(REG_INPUT_PORT1, &raw) == ESP_OK) {
+            /* 整理成 bit0~3 的"按下=1"位图（bit0=KEY0 ... bit3=KEY3） */
+            uint8_t now = 0;
+            for (uint8_t k = 0; k < KEY_NUM; k++) {
+                if (!(raw & key_bit[k])) {
+                    now |= (uint8_t)(1u << k);
+                }
+            }
 
             for (uint8_t k = 0; k < KEY_NUM; k++) {
                 bool now_pressed = (now >> k) & 1u;
@@ -172,13 +186,14 @@ esp_err_t drv_xl9555_init(void)
         i2c_master_bus_add_device(board_i2c_bus(), &dev_cfg, &s_ctx.dev),
         TAG, "add i2c device failed");
 
-    /* 输出锁存初始化：蜂鸣器/功放默认关闭，输出到 P0 口 */
-    s_ctx.out_cache[0] = 0x00;
+    /* 输出锁存初始化：蜂鸣器/功放低电平有效，默认输出高电平（关闭） */
+    s_ctx.out_cache[0] = (uint8_t)((1u << BOARD_XL9555_PIN_SPK_EN) |
+                                   (1u << BOARD_XL9555_PIN_BEEP));
     s_ctx.out_cache[1] = 0x00;
     board_i2c_lock();
     esp_err_t ret = reg_write(REG_OUTPUT_PORT0, s_ctx.out_cache[0]);
     if (ret == ESP_OK) {
-        /* 方向配置：P00 功放、P03 蜂鸣器为输出，其余保持输入（1） */
+        /* 方向配置：P02 功放、P03 蜂鸣器为输出，其余保持输入（1） */
         ret = reg_write(REG_CONFIG_PORT0,
                         (uint8_t)~((1u << BOARD_XL9555_PIN_SPK_EN) |
                                    (1u << BOARD_XL9555_PIN_BEEP)));
@@ -241,7 +256,12 @@ static int cmd_key(int argc, char **argv)
         printf("xl9555 not ready\n");
         return 1;
     }
+    /* 原始输入口电平：1=高（未按下），按键按下时对应位变 0，便于核对映射 */
+    uint8_t in0 = 0, in1 = 0;
+    reg_read(REG_INPUT_PORT0, &in0);
+    reg_read(REG_INPUT_PORT1, &in1);
     printf("KEY0~3 pressed mask: 0x%X\n", mask);
+    printf("raw input: P0=0x%02X P1=0x%02X\n", in0, in1);
     return 0;
 }
 
