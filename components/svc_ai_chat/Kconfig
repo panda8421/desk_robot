@@ -25,8 +25,17 @@ menu "AI Chat Service Configuration (DashScope)"
             Model that accepts input_audio content in chat completions.
             Check DashScope docs for available ASR models.
 
+    config SVC_AI_CHAT_TTS_API_URL
+        string "TTS native API URL (qwen-tts multimodal-generation)"
+        default "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+        depends on SVC_AI_CHAT_ENABLE
+        help
+            DashScope OpenAI-compatible mode does NOT expose /audio/speech
+            (returns 404). qwen-tts must use the native multimodal-generation
+            endpoint, which returns output.audio.url for download.
+
     config SVC_AI_CHAT_TTS_MODEL
-        string "TTS model name (audio/speech endpoint)"
+        string "TTS model name"
         default "qwen-tts"
         depends on SVC_AI_CHAT_ENABLE
 

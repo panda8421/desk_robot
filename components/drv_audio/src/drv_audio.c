@@ -5,6 +5,8 @@
  */
 #include "drv_audio.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_console.h"
@@ -44,6 +46,7 @@ esp_err_t drv_audio_init(const drv_audio_cfg_t *cfg)
         .role = I2S_ROLE_MASTER,
         .dma_desc_num = desc_num,
         .dma_frame_num = frame_num,
+        .auto_clear = true,     /* 发送完毕清零 DMA 缓冲，否则最后一块会被循环重发（嘟嘟声） */
     };
     ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, &s_ctx.tx_handle, &s_ctx.rx_handle),
                         TAG, "new i2s channel failed");

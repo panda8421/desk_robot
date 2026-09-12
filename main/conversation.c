@@ -198,7 +198,9 @@ static void on_chat(int32_t id, void *data)
     }
 
     case CHAT_TTS_READY: {
-        if (s_ctx.state != CHAT_STATE_THINKING) {
+        /* THINKING：语音流程；STANDBY：控制台 chat ask 直调（绕过状态机） */
+        if (s_ctx.state != CHAT_STATE_THINKING &&
+            s_ctx.state != CHAT_STATE_STANDBY) {
             break;
         }
         const int16_t *pcm = NULL;

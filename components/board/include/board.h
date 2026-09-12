@@ -40,8 +40,8 @@ extern "C" {
 #define BOARD_I2S_MCLK_GPIO         GPIO_NUM_3   /* 主时钟 */
 #define BOARD_I2S_SCK_GPIO          GPIO_NUM_46  /* 位时钟 */
 #define BOARD_I2S_LRCK_GPIO         GPIO_NUM_9   /* 帧时钟 */
-#define BOARD_I2S_SDIN_GPIO         GPIO_NUM_10  /* 录音数据（ES8388 ADC -> S3） */
-#define BOARD_I2S_SDOUT_GPIO        GPIO_NUM_14  /* 播放数据（S3 -> ES8388 DAC） */
+#define BOARD_I2S_SDIN_GPIO         GPIO_NUM_14  /* 录音数据（ES8388 ASDOUT -> S3） */
+#define BOARD_I2S_SDOUT_GPIO        GPIO_NUM_10  /* 播放数据（S3 DSDIN -> ES8388 DAC） */
 #define BOARD_ES8388_I2C_ADDR       0x10         /* ES8388 7 位从机地址 */
 
 /* ============== 预留：显示屏引脚（后续填充） ============== */

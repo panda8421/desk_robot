@@ -170,6 +170,56 @@ out:
     return ret;
 }
 
+/**
+ * @brief  GET 下载二进制内容（用于拉取 TTS 返回的音频 URL）
+ * @return ESP_OK（HTTP 2xx 且已读取）/ ESP_FAIL
+ */
+static esp_err_t http_get(const char *url, uint8_t *resp_buf,
+                          size_t resp_max, size_t *resp_len)
+{
+    esp_http_client_config_t cfg = {
+        .url = url,
+        .timeout_ms = HTTP_TIMEOUT_MS,
+        .buffer_size = 2048,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    ESP_RETURN_ON_FALSE(client != NULL, ESP_FAIL, TAG, "http init failed");
+
+    esp_err_t ret = ESP_FAIL;
+    *resp_len = 0;
+    ESP_ERROR_CHECK(esp_http_client_set_method(client, HTTP_METHOD_GET));
+
+    if (esp_http_client_open(client, -1) != ESP_OK) {
+        ESP_LOGE(TAG, "http open failed");
+        goto out;
+    }
+    esp_http_client_fetch_headers(client);
+    int status = esp_http_client_get_status_code(client);
+
+    size_t got = 0;
+    while (got < resp_max) {
+        int n = esp_http_client_read(client, (char *)resp_buf + got,
+                                     (int)(resp_max - got));
+        if (n <= 0) {
+            break;
+        }
+        got += (size_t)n;
+    }
+    *resp_len = got;
+
+    if (status >= 200 && status < 300) {
+        ret = ESP_OK;
+    } else {
+        ESP_LOGE(TAG, "http status %d", status);
+        ret = ESP_FAIL;
+    }
+out:
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    return ret;
+}
+
 /* ============== WAV 工具 ============== */
 
 /* 在 PCM 前构建 44 字节标准 WAV 头（16k/mono/16bit） */
@@ -402,6 +452,7 @@ static esp_err_t do_llm_and_tts(const char *user_text)
     ESP_RETURN_ON_FALSE(body != NULL, ESP_ERR_NO_MEM, TAG, "llm json failed");
 
     esp_err_t ret;
+    bool tts_failed = false;    /* 失败源自 TTS 阶段时，do_tts 已上报，勿重复 */
     uint8_t *resp = heap_caps_malloc(JSON_RESP_MAX, MALLOC_CAP_SPIRAM);
     size_t resp_len = 0;
     if (resp == NULL) {
@@ -437,45 +488,88 @@ static esp_err_t do_llm_and_tts(const char *user_text)
     /* 记录助手回复（截断到缓冲长度） */
     push_history("assistant", reply);
 
-    /* TTS */
+    /* TTS（失败时 do_tts 内部已上报 stage=t） */
     ret = do_tts(reply);
     cJSON_Delete(jresp);
     if (ret == ESP_OK) {
         esp_event_post(CHAT_EVENT, CHAT_TTS_READY, NULL, 0, 0);
+    } else {
+        tts_failed = true;
     }
 
 cleanup_resp:
     free(resp);
 cleanup_body:
     cJSON_free(body);
-    if (ret != ESP_OK) {
-        post_chat_error(ret, ret == ESP_ERR_INVALID_RESPONSE ? 'l' : 'l');
+    if (ret != ESP_OK && !tts_failed) {
+        post_chat_error(ret, 'l');
     }
     return ret;
 }
 
-/* ============== TTS（语音合成，qwen-tts，返回 WAV） ============== */
+/* ============== TTS（语音合成，qwen-tts 原生 API） ============== */
 
+/**
+ * @brief  合成语音并转为 16k/mono/16bit
+ * @note   DashScope OpenAI 兼容模式未开放 /audio/speech（404），qwen-tts
+ *         走原生 multimodal-generation 端点：POST 拿 output.audio.url
+ *         （24h 有效 OSS 地址）→ GET 下载 WAV（24kHz/16bit）→ 重采样 16k
+ */
 static esp_err_t do_tts(const char *text)
 {
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "model", CONFIG_SVC_AI_CHAT_TTS_MODEL);
-    cJSON_AddStringToObject(root, "input", text);
-    cJSON_AddStringToObject(root, "voice", CONFIG_SVC_AI_CHAT_TTS_VOICE);
-    cJSON_AddStringToObject(root, "response_format", "wav");
+    cJSON *input = cJSON_AddObjectToObject(root, "input");
+    cJSON_AddStringToObject(input, "text", text);
+    cJSON_AddStringToObject(input, "voice", CONFIG_SVC_AI_CHAT_TTS_VOICE);
     char *body = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     ESP_RETURN_ON_FALSE(body != NULL, ESP_ERR_NO_MEM, TAG, "tts json failed");
 
     esp_err_t ret;
+    uint8_t *resp = heap_caps_malloc(JSON_RESP_MAX, MALLOC_CAP_SPIRAM);
+    size_t resp_len = 0;
+    if (resp == NULL) {
+        ret = ESP_ERR_NO_MEM;
+        goto cleanup_body;
+    }
+    ret = http_post(CONFIG_SVC_AI_CHAT_TTS_API_URL, body,
+                    resp, JSON_RESP_MAX, &resp_len);
+    if (ret != ESP_OK) {
+        goto cleanup_resp;
+    }
+
+    /* 1. 解析 output.audio.url */
+    cJSON *jresp = cJSON_Parse((const char *)resp);
+    if (jresp == NULL) {
+        ESP_LOGE(TAG, "tts resp unparsable (len=%u): %.*s",
+                 (unsigned)resp_len, (int)(resp_len > 512 ? 512 : resp_len),
+                 (const char *)resp);
+        ret = ESP_ERR_INVALID_RESPONSE;
+        goto cleanup_resp;
+    }
+    const char *audio_url = cJSON_GetStringValue(cJSON_GetObjectItem(
+        cJSON_GetObjectItem(cJSON_GetObjectItem(jresp, "output"), "audio"),
+        "url"));
+    if (audio_url == NULL) {
+        ESP_LOGE(TAG, "tts resp missing audio.url: %.*s",
+                 (int)(resp_len > 512 ? 512 : resp_len), (const char *)resp);
+        ret = ESP_ERR_INVALID_RESPONSE;
+        cJSON_Delete(jresp);
+        goto cleanup_resp;
+    }
+    ESP_LOGI(TAG, "tts audio url ready");
+
+    /* 2. 下载 WAV 并重采样到 16k/mono/16bit */
     uint8_t *wav_buf = heap_caps_malloc(TTS_BUF_MAX, MALLOC_CAP_SPIRAM);
     size_t wav_len = 0;
     if (wav_buf == NULL) {
         ret = ESP_ERR_NO_MEM;
-        goto cleanup_body;
+        cJSON_Delete(jresp);
+        goto cleanup_resp;
     }
-    ret = http_post(CONFIG_SVC_AI_CHAT_API_BASE "/audio/speech", body,
-                    wav_buf, TTS_BUF_MAX, &wav_len);
+    ret = http_get(audio_url, wav_buf, TTS_BUF_MAX, &wav_len);
+    cJSON_Delete(jresp);
     if (ret != ESP_OK) {
         goto cleanup_wav;
     }
@@ -485,7 +579,6 @@ static esp_err_t do_tts(const char *text)
         goto cleanup_wav;
     }
 
-    /* WAV → 16k/mono/16bit */
     ret = wav_to_16k_mono(wav_buf, wav_len, s_ctx.tts_buf, TTS_BUF_MAX / 2,
                           &s_ctx.tts_samples);
     if (ret == ESP_OK) {
@@ -495,6 +588,8 @@ static esp_err_t do_tts(const char *text)
 
 cleanup_wav:
     free(wav_buf);
+cleanup_resp:
+    free(resp);
 cleanup_body:
     cJSON_free(body);
     if (ret != ESP_OK) {
