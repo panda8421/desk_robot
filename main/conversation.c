@@ -6,6 +6,8 @@
  *   BOOT → NET_WAIT → (WiFi) → STANDBY → (KEY0) → LISTENING
  *        → (VAD断句) → RECOGNIZING → (ASR结果) → THINKING
  *        → (TTS就绪) → SPEAKING → (播放完成) → STANDBY
+ * 连续模式（CONFIG_CHAT_CONTINUOUS，默认开）：
+ *   SPEAKING → (播放完成) → LISTENING（免按键连续对话，静音超时回 STANDBY）
  */
 #include "conversation.h"
 
@@ -29,9 +31,12 @@ static const char *TAG = "conversation";
 typedef struct {
     volatile chat_state_t state;
     esp_timer_handle_t    timeout_timer;    /* LISTENING/THINKING 超时 */
+    esp_timer_handle_t    rec_delay_timer;  /* 提示音播完后延迟开录音 */
 } conversation_ctx_t;
 
 static conversation_ctx_t s_ctx;
+
+#define REC_DELAY_MS            350     /* TONE_WAKE 约 280ms，留余量 */
 
 /* ============== 内部工具 ============== */
 
@@ -42,6 +47,10 @@ static void set_state(chat_state_t next)
     }
     s_ctx.state = next;
     ESP_LOGI(TAG, "state -> %d", (int)next);
+
+    /* 广播状态变化（行为层等第三方据此联动，如云台动画） */
+    int32_t st = (int32_t)next;
+    esp_event_post(CHAT_EVENT, CHAT_STATE_CHANGED, &st, sizeof(st), 0);
 
     /* 状态指示灯（覆盖 svc_status 心跳，直观反映对话状态） */
     switch (next) {
@@ -74,6 +83,12 @@ static void abort_to_standby(bool play_err_tone)
 }
 
 /* ---- 超时定时器回调（esp_timer 任务上下文） ---- */
+static void rec_delay_cb(void *arg)
+{
+    (void)arg;
+    svc_audio_start_recording();
+}
+
 static void timeout_cb(void *arg)
 {
     (void)arg;
@@ -111,9 +126,10 @@ static void on_key(int32_t id, void *data)
     if (key == 0 && s_ctx.state == CHAT_STATE_STANDBY) {
         ESP_LOGI(TAG, "KEY0: start conversation");
         svc_audio_play_tone(SVC_TONE_WAKE);
-        svc_audio_start_recording();
-        arm_timeout(LISTEN_TIMEOUT_MS);
         set_state(CHAT_STATE_LISTENING);
+        arm_timeout(LISTEN_TIMEOUT_MS);
+        /* 提示音与录音错开：避免咪头录到嘟嘟声污染 VAD/ASR */
+        esp_timer_start_once(s_ctx.rec_delay_timer, REC_DELAY_MS * 1000);
     } else if (key == 1 && s_ctx.state == CHAT_STATE_SPEAKING) {
         ESP_LOGI(TAG, "KEY1: interrupt playback");
         svc_audio_stop_play();      /* DONE 事件负责回 STANDBY */
@@ -142,7 +158,9 @@ static void on_audio(int32_t id, void *data)
         svc_audio_get_record_data(&pcm, &samples);
         if (samples == 0) {
             ESP_LOGW(TAG, "no speech captured");
+#if !CONFIG_CHAT_CONTINUOUS
             svc_audio_play_tone(SVC_TONE_ERROR);
+#endif
             set_state(CHAT_STATE_STANDBY);
             break;
         }
@@ -154,7 +172,15 @@ static void on_audio(int32_t id, void *data)
 
     case AUDIO_PLAYBACK_DONE:
         if (s_ctx.state == CHAT_STATE_SPEAKING) {
+#if CONFIG_CHAT_CONTINUOUS
+            /* 连续对话：播完自动重新监听（延迟开录避开喇叭尾音） */
+            ESP_LOGI(TAG, "continuous: relisten");
+            set_state(CHAT_STATE_LISTENING);
+            arm_timeout(LISTEN_TIMEOUT_MS);
+            esp_timer_start_once(s_ctx.rec_delay_timer, REC_DELAY_MS * 1000);
+#else
             set_state(CHAT_STATE_STANDBY);
+#endif
         }
         break;
 
@@ -270,6 +296,13 @@ void conversation_init(void)
         .name = "chat_timeout",
     };
     ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_ctx.timeout_timer));
+
+    /* 提示音延迟开录音定时器 */
+    const esp_timer_create_args_t rec_timer_args = {
+        .callback = &rec_delay_cb,
+        .name = "rec_delay",
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&rec_timer_args, &s_ctx.rec_delay_timer));
 
     /* 订阅四类事件（默认事件循环） */
     ESP_ERROR_CHECK(esp_event_handler_instance_register(KEY_EVENT, ESP_EVENT_ANY_ID,

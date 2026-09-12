@@ -1,0 +1,11 @@
+menu "Behavior Service Configuration"
+
+    config SVC_BEHAVIOR_ENABLE
+        bool "Enable Behavior service (gesture animations on chat events)"
+        default y
+        depends on SVC_PAN_TILT_ENABLE
+        help
+            Maps conversation state changes and LLM gesture tags to
+            pan-tilt animations (nod/shake/tilt/listen/home).
+
+endmenu

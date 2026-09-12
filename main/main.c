@@ -18,6 +18,7 @@
 #include "svc_status.h"
 #include "svc_audio.h"
 #include "svc_ai_chat.h"
+#include "svc_behavior.h"
 #include "drv_xl9555.h"
 #include "drv_es8388.h"
 #include "drv_audio.h"
@@ -98,6 +99,12 @@ static void services_init(void)
     ESP_ERROR_CHECK(svc_pan_tilt_init());
     ESP_ERROR_CHECK(svc_pan_tilt_start());
 
+#if CONFIG_SVC_BEHAVIOR_ENABLE
+    /* 行为层：订阅对话状态/动作事件，驱动云台拟人动画 */
+    ESP_ERROR_CHECK(svc_behavior_init());
+    ESP_ERROR_CHECK(svc_behavior_start());
+#endif
+
 #if CONFIG_SVC_WIFI_ENABLE
     ESP_ERROR_CHECK(svc_wifi_init());
     ESP_ERROR_CHECK(svc_wifi_start());
@@ -123,6 +130,9 @@ static void console_cmds_register(void)
     svc_status_register_console_cmds();
 #endif
     svc_pan_tilt_register_console_cmds();
+#if CONFIG_SVC_BEHAVIOR_ENABLE
+    svc_behavior_register_console_cmds();
+#endif
     svc_wifi_register_console_cmds();
 #if CONFIG_DRV_XL9555_ENABLE
     drv_xl9555_register_console_cmds();

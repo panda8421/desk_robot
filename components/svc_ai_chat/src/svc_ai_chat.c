@@ -316,42 +316,51 @@ static esp_err_t do_asr(const int16_t *pcm, size_t samples)
     wav_build_header(wav, (uint32_t)samples);
     memcpy(wav + 44, pcm, samples * 2);
 
-    /* 2. WAV → base64 */
+    /* 2. WAV → base64 Data URI（qwen-audio-3.0 要求 data 为
+     *    data:{MIME};base64,xxx 完整格式） */
+    static const char DATA_URI_PREFIX[] = "data:audio/wav;base64,";
+    const size_t prefix_len = sizeof(DATA_URI_PREFIX) - 1;
     size_t b64_len = 0;
     mbedtls_base64_encode(NULL, 0, &b64_len, wav, wav_len);     /* 先取长度 */
-    char *json = heap_caps_malloc(b64_len + 1024, MALLOC_CAP_SPIRAM);
+    char *data_uri = heap_caps_malloc(prefix_len + b64_len + 1, MALLOC_CAP_SPIRAM);
     esp_err_t ret = ESP_ERR_NO_MEM;
-    if (json == NULL) {
+    if (data_uri == NULL) {
         goto cleanup_wav;
     }
+    memcpy(data_uri, DATA_URI_PREFIX, prefix_len);
     size_t b64_written = 0;
-    ret = mbedtls_base64_encode((unsigned char *)json, b64_len + 1024, &b64_written,
-                                wav, wav_len);
+    ret = mbedtls_base64_encode((unsigned char *)data_uri + prefix_len, b64_len + 1,
+                                &b64_written, wav, wav_len);
     if (ret != 0) {
         ret = ESP_FAIL;
-        goto cleanup_json;
+        goto cleanup_uri;
     }
+    data_uri[prefix_len + b64_written] = '\0';
 
-    /* 3. 组装请求 JSON */
+    /* 3. 组装请求：音频走 input_audio.data（Data URI）；
+     *    format/sample_rate 为顶层 parameters 必选/可选字段 */
     cJSON *root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "model", CONFIG_SVC_AI_CHAT_ASR_MODEL);
-    cJSON *msgs = cJSON_AddArrayToObject(root, "messages");
+    cJSON *input = cJSON_AddObjectToObject(root, "input");
+    cJSON *msgs = cJSON_AddArrayToObject(input, "messages");
     cJSON *msg = cJSON_CreateObject();
     cJSON_AddStringToObject(msg, "role", "user");
     cJSON *content = cJSON_AddArrayToObject(msg, "content");
-    cJSON *audio = cJSON_CreateObject();
-    cJSON_AddStringToObject(audio, "type", "input_audio");
-    cJSON *ia = cJSON_CreateObject();
-    cJSON_AddStringToObject(ia, "data", json);
-    cJSON_AddStringToObject(ia, "format", "wav");
-    cJSON_AddItemToObject(audio, "input_audio", ia);
-    cJSON_AddItemToArray(content, audio);
+    cJSON *audio_item = cJSON_CreateObject();
+    cJSON_AddStringToObject(audio_item, "type", "input_audio");
+    cJSON *input_audio = cJSON_CreateObject();
+    cJSON_AddStringToObject(input_audio, "data", data_uri);
+    cJSON_AddItemToObject(audio_item, "input_audio", input_audio);
+    cJSON_AddItemToArray(content, audio_item);
     cJSON_AddItemToArray(msgs, msg);
+    cJSON *params = cJSON_AddObjectToObject(root, "parameters");
+    cJSON_AddStringToObject(params, "format", "wav");
+    cJSON_AddStringToObject(params, "sample_rate", "16000");
     char *body = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (body == NULL) {
         ret = ESP_ERR_NO_MEM;
-        goto cleanup_json;
+        goto cleanup_uri;
     }
 
     /* 4. 发送 */
@@ -363,13 +372,14 @@ static esp_err_t do_asr(const int16_t *pcm, size_t samples)
         ret = ESP_ERR_NO_MEM;
         goto cleanup_body;
     }
-    ret = http_post(CONFIG_SVC_AI_CHAT_API_BASE "/chat/completions", body,
+    ret = http_post(CONFIG_SVC_AI_CHAT_ASR_API_URL, body,
                     resp, JSON_RESP_MAX, &resp_len);
     if (ret != ESP_OK) {
         goto cleanup_resp;
     }
 
-    /* 5. 解析响应 */
+    /* 5. 解析响应：qwen-audio-3.0 非流式为 output.text；
+     *    兼容老结构 output.choices[0].message.content[0].text */
     cJSON *jresp = cJSON_Parse((const char *)resp);
     if (jresp == NULL) {
         ESP_LOGE(TAG, "asr resp unparsable (len=%u): %.*s",
@@ -377,11 +387,15 @@ static esp_err_t do_asr(const int16_t *pcm, size_t samples)
         ret = ESP_ERR_INVALID_RESPONSE;
         goto cleanup_resp;
     }
-    /* choices 是 JSON 数组，必须用 cJSON_GetArrayItem 按下标取 */
-    cJSON *choice0 = cJSON_GetArrayItem(cJSON_GetObjectItem(jresp, "choices"), 0);
-    cJSON *text_item = choice0 ? cJSON_GetObjectItem(choice0, "message") : NULL;
-    const char *text = text_item ? cJSON_GetStringValue(
-        cJSON_GetObjectItem(text_item, "content")) : NULL;
+    cJSON *output = cJSON_GetObjectItem(jresp, "output");
+    const char *text = cJSON_GetStringValue(cJSON_GetObjectItem(output, "text"));
+    if (text == NULL) {
+        cJSON *choice0 = cJSON_GetArrayItem(cJSON_GetObjectItem(output, "choices"), 0);
+        cJSON *content_arr = choice0 ? cJSON_GetObjectItem(
+            cJSON_GetObjectItem(choice0, "message"), "content") : NULL;
+        cJSON *item0 = cJSON_GetArrayItem(content_arr, 0);
+        text = item0 ? cJSON_GetStringValue(cJSON_GetObjectItem(item0, "text")) : NULL;
+    }
     if (text == NULL) {
         ret = ESP_ERR_INVALID_RESPONSE;
         cJSON_Delete(jresp);
@@ -396,8 +410,8 @@ cleanup_resp:
     free(resp);
 cleanup_body:
     cJSON_free(body);
-cleanup_json:
-    free(json);
+cleanup_uri:
+    free(data_uri);
 cleanup_wav:
     free(wav);
     if (ret != ESP_OK) {
@@ -422,6 +436,77 @@ static esp_err_t push_history(const char *role, const char *content)
             sizeof(s_ctx.history[0].content) - 1);
     s_ctx.hist_cnt++;
     return ESP_OK;
+}
+
+/* UTF-8 白名单清洗：只保留 ASCII 可见字符、CJK 汉字、中文/全角标点；
+ * 其余（emoji、变体选择符、ZWJ 等）丢弃，防止 TTS 把 emoji 读成杂音 */
+static size_t strip_emoji(char *s)
+{
+    char *w = s;
+    const char *r = s;
+    while (*r != '\0') {
+        unsigned char c = (unsigned char)*r;
+        if (c < 0x80) {                             /* ASCII */
+            if (c >= 0x20) {
+                *w++ = *r;
+            }
+            r++;
+        } else if ((c & 0xF0) == 0xE0 &&
+                   (unsigned char)r[1] >= 0x80) {   /* 完整 3 字节序列 */
+            unsigned char c2 = (unsigned char)r[1];
+            unsigned char c3 = (unsigned char)r[2];
+            bool keep = (c >= 0xE4 && c <= 0xE9)                    /* CJK 汉字 */
+                     || (c == 0xE3 && c2 == 0x80)                   /* 中文标点 ，。、「」 */
+                     || (c == 0xEF && (c2 == 0xBC || c2 == 0xBD))   /* 全角标点 ！？ */
+                     || (c == 0xE2 && c2 == 0x80 && c3 >= 0x93 && c3 <= 0x94);  /* — – */
+            if (keep) {
+                memcpy(w, r, 3);
+                w += 3;
+            }
+            r += 3;
+        } else {                                    /* 2/4 字节（emoji 主区）等：丢弃整个序列 */
+            r++;
+            while (((unsigned char)*r & 0xC0) == 0x80) {
+                r++;
+            }
+        }
+    }
+    *w = '\0';
+    return (size_t)(w - s);
+}
+
+/* 提取并执行 [nod]/[shake]/[tilt] 动作标记：命中白名单则发 GESTURE_EVENT
+ * 并从文本中删除标记（TTS 不念）；未识别的标记原样保留 */
+static void extract_gesture_tags(char *s)
+{
+    char *w = s;
+    const char *r = s;
+    while (*r != '\0') {
+        if (*r == '[') {
+            const char *close = strchr(r, ']');
+            size_t tag_len = (close != NULL) ? (size_t)(close - r - 1) : 0;
+            if (close != NULL && tag_len >= 2 && tag_len <= 7) {
+                char tag[8];
+                memcpy(tag, r + 1, tag_len);
+                tag[tag_len] = '\0';
+                int32_t gid = -1;
+                if (strcmp(tag, "nod") == 0) {
+                    gid = GESTURE_NOD;
+                } else if (strcmp(tag, "shake") == 0) {
+                    gid = GESTURE_SHAKE;
+                } else if (strcmp(tag, "tilt") == 0) {
+                    gid = GESTURE_TILT_HEAD;
+                }
+                if (gid >= 0) {
+                    esp_event_post(GESTURE_EVENT, gid, NULL, 0, 0);
+                    r = close + 1;
+                    continue;
+                }
+            }
+        }
+        *w++ = *r++;
+    }
+    *w = '\0';
 }
 
 static esp_err_t do_llm_and_tts(const char *user_text)
@@ -453,6 +538,7 @@ static esp_err_t do_llm_and_tts(const char *user_text)
 
     esp_err_t ret;
     bool tts_failed = false;    /* 失败源自 TTS 阶段时，do_tts 已上报，勿重复 */
+    char *cleaned = NULL;       /* emoji 清洗后的回复副本 */
     uint8_t *resp = heap_caps_malloc(JSON_RESP_MAX, MALLOC_CAP_SPIRAM);
     size_t resp_len = 0;
     if (resp == NULL) {
@@ -483,6 +569,17 @@ static esp_err_t do_llm_and_tts(const char *user_text)
         goto cleanup_resp;
     }
     ESP_LOGI(TAG, "llm reply: %s", reply);
+
+    /* 清洗 emoji（reply 指向 cJSON 内部，需副本）；清洗后用于回话、历史与 TTS */
+    size_t reply_len = strlen(reply);
+    cleaned = heap_caps_malloc(reply_len + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (cleaned != NULL) {
+        memcpy(cleaned, reply, reply_len + 1);
+        strip_emoji(cleaned);
+        extract_gesture_tags(cleaned);      /* 动作标记 → GESTURE_EVENT，从文本剔除 */
+        reply = cleaned;
+    }
+
     post_chat_text(CHAT_LLM_REPLY, reply);
 
     /* 记录助手回复（截断到缓冲长度） */
@@ -498,6 +595,7 @@ static esp_err_t do_llm_and_tts(const char *user_text)
     }
 
 cleanup_resp:
+    free(cleaned);
     free(resp);
 cleanup_body:
     cJSON_free(body);
@@ -507,12 +605,12 @@ cleanup_body:
     return ret;
 }
 
-/* ============== TTS（语音合成，qwen-tts 原生 API） ============== */
+/* ============== TTS（语音合成，qwen-audio-3.0-tts 原生 API） ============== */
 
 /**
  * @brief  合成语音并转为 16k/mono/16bit
- * @note   DashScope OpenAI 兼容模式未开放 /audio/speech（404），qwen-tts
- *         走原生 multimodal-generation 端点：POST 拿 output.audio.url
+ * @note   qwen-audio-3.0-tts 走 SpeechSynthesizer 端点（非 multimodal-generation）：
+ *         input 含 text/voice/format/sample_rate，POST 拿 output.audio.url
  *         （24h 有效 OSS 地址）→ GET 下载 WAV（24kHz/16bit）→ 重采样 16k
  */
 static esp_err_t do_tts(const char *text)
@@ -522,6 +620,8 @@ static esp_err_t do_tts(const char *text)
     cJSON *input = cJSON_AddObjectToObject(root, "input");
     cJSON_AddStringToObject(input, "text", text);
     cJSON_AddStringToObject(input, "voice", CONFIG_SVC_AI_CHAT_TTS_VOICE);
+    cJSON_AddStringToObject(input, "format", "wav");
+    cJSON_AddNumberToObject(input, "sample_rate", 24000);
     char *body = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     ESP_RETURN_ON_FALSE(body != NULL, ESP_ERR_NO_MEM, TAG, "tts json failed");

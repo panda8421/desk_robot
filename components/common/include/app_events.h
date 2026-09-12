@@ -19,6 +19,7 @@ ESP_EVENT_DECLARE_BASE(SERVO_EVENT);
 ESP_EVENT_DECLARE_BASE(KEY_EVENT);
 ESP_EVENT_DECLARE_BASE(AUDIO_EVENT);   /* svc_audio 发布 */
 ESP_EVENT_DECLARE_BASE(CHAT_EVENT);    /* svc_ai_chat 发布 */
+ESP_EVENT_DECLARE_BASE(GESTURE_EVENT); /* svc_ai_chat/控制台 → svc_behavior */
 
 /* ============== PAN_TILT_EVENT ============== */
 typedef enum {
@@ -27,6 +28,9 @@ typedef enum {
 
     /* arg: servo_channel_t* ，值传递，表示触发限位的通道 */
     PAN_TILT_LIMIT_HIT,
+
+    /* arg: NULL —— 控制台手动命令（pt set/home），行为层收到后抢占动画 */
+    PAN_TILT_MANUAL_CMD,
 } pan_tilt_event_id_t;
 
 /* ============== WIFI_EVENT ============== */
@@ -87,7 +91,20 @@ typedef enum {
 
     /* arg: chat_err_info_t*（值传递） —— 云端链路错误 */
     CHAT_ERROR,
+
+    /* arg: int32_t*（chat_state_t 值拷贝） —— 对话状态机状态变化广播 */
+    CHAT_STATE_CHANGED,
 } chat_event_id_t;
+
+/* ============== GESTURE_EVENT（动作指令 → svc_behavior） ============== */
+typedef enum {
+    /* arg: NULL，各动作均为即发即忘，新动作抢占旧动作 */
+    GESTURE_NOD,        /* 点头 */
+    GESTURE_SHAKE,      /* 摇头 */
+    GESTURE_TILT_HEAD,  /* 歪头 */
+    GESTURE_LISTEN,     /* 倾听位（侧头） */
+    GESTURE_HOME,       /* 回正 */
+} gesture_event_id_t;
 
 #ifdef __cplusplus
 }

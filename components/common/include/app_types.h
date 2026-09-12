@@ -40,6 +40,18 @@ typedef struct {
     char    stage;                  /* 出错环节：'a'=ASR 'l'=LLM 't'=TTS */
 } chat_err_info_t;
 
+/* ---- 对话状态机状态（CHAT_STATE_CHANGED 事件载荷） ---- */
+typedef enum {
+    CHAT_STATE_BOOT = 0,        /* 上电初始化中 */
+    CHAT_STATE_NET_WAIT,        /* 等待 WiFi 连接 */
+    CHAT_STATE_STANDBY,         /* 待机（等 KEY0 触发） */
+    CHAT_STATE_LISTENING,       /* 录音中 */
+    CHAT_STATE_RECOGNIZING,     /* ASR 识别中 */
+    CHAT_STATE_THINKING,        /* LLM+TTS 生成中 */
+    CHAT_STATE_SPEAKING,        /* 播放回复中 */
+    CHAT_STATE_ERROR,           /* 错误态 */
+} chat_state_t;
+
 #ifdef __cplusplus
 }
 #endif

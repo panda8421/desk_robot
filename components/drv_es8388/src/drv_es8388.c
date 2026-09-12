@@ -21,6 +21,9 @@ static const char *TAG = "drv_es8388";
 
 #define I2C_TIMEOUT_MS          100
 
+/* 默认输出音量（百分比 0~100，100 = 数字音量 0dB 无衰减） */
+#define DRV_ES8388_DEFAULT_VOLUME_PCT   100
+
 /* ============== ES8388 寄存器地址（ESP-ADF 映射） ============== */
 #define ES8388_CONTROL1         0x00    /* Enref/播放&录音模式 */
 #define ES8388_CONTROL2         0x01    /* 模拟偏置/VREF */
@@ -159,7 +162,7 @@ esp_err_t drv_es8388_init(void)
         i2c_master_bus_add_device(board_i2c_bus(), &dev_cfg, &s_ctx.dev),
         TAG, "add i2c device failed");
 
-    s_ctx.volume_pct = 80;
+    s_ctx.volume_pct = DRV_ES8388_DEFAULT_VOLUME_PCT;
     s_ctx.muted = false;
     s_ctx.speaker_mode = true;
 

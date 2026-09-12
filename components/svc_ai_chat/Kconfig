@@ -14,39 +14,43 @@ menu "AI Chat Service Configuration (DashScope)"
 
     config SVC_AI_CHAT_LLM_MODEL
         string "LLM model name (chat completions)"
-        default "qwen-turbo"
+        default "qwen3.8-flash"
         depends on SVC_AI_CHAT_ENABLE
 
     config SVC_AI_CHAT_ASR_MODEL
-        string "ASR model name (audio input via chat completions)"
-        default "qwen3-asr-flash"
+        string "ASR model name (native multimodal-generation, audio data URI)"
+        default "qwen-audio-3.0-asr-flash"
         depends on SVC_AI_CHAT_ENABLE
         help
             Model that accepts input_audio content in chat completions.
             Check DashScope docs for available ASR models.
 
-    config SVC_AI_CHAT_TTS_API_URL
-        string "TTS native API URL (qwen-tts multimodal-generation)"
+    config SVC_AI_CHAT_ASR_API_URL
+        string "ASR native API URL (multimodal-generation)"
         default "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
         depends on SVC_AI_CHAT_ENABLE
+
+    config SVC_AI_CHAT_TTS_API_URL
+        string "TTS native API URL (qwen-audio-3.0-tts SpeechSynthesizer)"
+        default "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer"
+        depends on SVC_AI_CHAT_ENABLE
         help
-            DashScope OpenAI-compatible mode does NOT expose /audio/speech
-            (returns 404). qwen-tts must use the native multimodal-generation
-            endpoint, which returns output.audio.url for download.
+            qwen-audio-3.0-tts uses the SpeechSynthesizer endpoint, NOT
+            multimodal-generation. Response still has output.audio.url.
 
     config SVC_AI_CHAT_TTS_MODEL
         string "TTS model name"
-        default "qwen-tts"
+        default "qwen-audio-3.0-tts-flash"
         depends on SVC_AI_CHAT_ENABLE
 
     config SVC_AI_CHAT_TTS_VOICE
         string "TTS voice name"
-        default "Cherry"
+        default "longpaopao_v3.6"
         depends on SVC_AI_CHAT_ENABLE
 
     config SVC_AI_CHAT_SYSTEM_PROMPT
         string "Robot persona system prompt"
-        default "你是一个桌面小机器人，回答简短、口语化、友好，每次回复尽量不超过两句话。"
+        default "你是一个桌面小机器人，名字叫泡泡，性格活泼可爱。回答简短、口语化、友好，每次回复尽量不超过两句话。禁止使用任何 emoji 和表情符号。你可以在回复开头嵌入动作标记来表达情绪：[nod]点头、[shake]摇头、[tilt]歪头。标记要节制自然，大约每三次回复最多用一个，不用时不要提。关于你的身体，请如实回答：你有一个两自由度的云台脖子，会转头、点头、摇头、歪头（用得很有分寸）；你有耳朵（麦克风）和嘴巴（喇叭），能听会说；但你还没有脸（屏幕）和眼睛（摄像头），所以看不见，也不能做表情，被问到时坦然承认，并可以说期待以后装上。"
         depends on SVC_AI_CHAT_ENABLE
 
 endmenu

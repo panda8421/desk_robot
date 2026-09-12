@@ -161,6 +161,8 @@ static int cmd_pt(int argc, char **argv)
             printf("set failed: %s\n", esp_err_to_name(err));
             return 1;
         }
+        /* 通知行为层：手动接管，抢占当前动画 */
+        esp_event_post(PAN_TILT_EVENT, PAN_TILT_MANUAL_CMD, NULL, 0, 0);
         printf("ok, moving to pan=%d tilt=%d\n", pan, tilt);
         return 0;
     }
@@ -173,6 +175,7 @@ static int cmd_pt(int argc, char **argv)
             printf("home failed: %s\n", esp_err_to_name(err));
             return 1;
         }
+        esp_event_post(PAN_TILT_EVENT, PAN_TILT_MANUAL_CMD, NULL, 0, 0);
         printf("ok, going home pan=%d tilt=%d\n", pan, tilt);
         return 0;
     }

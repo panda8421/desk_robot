@@ -12,4 +12,12 @@ menu "Project Configuration"
         help
             Semantic version of the firmware.
 
+    config CHAT_CONTINUOUS
+        bool "Continuous conversation mode (auto relisten after reply)"
+        default y
+        help
+            After TTS playback finishes, restart listening automatically
+            instead of returning to standby. Silence timeout ends the
+            conversation. KEY0 still starts a session from standby.
+
 endmenu
