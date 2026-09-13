@@ -94,6 +94,9 @@ typedef enum {
 
     /* arg: int32_t*（chat_state_t 值拷贝） —— 对话状态机状态变化广播 */
     CHAT_STATE_CHANGED,
+
+    /* arg: int32_t*（emotion_id_t 值拷贝） —— LLM/控制台情绪标记 → svc_face/svc_behavior */
+    CHAT_EMOTION,
 } chat_event_id_t;
 
 /* ============== GESTURE_EVENT（动作指令 → svc_behavior） ============== */
@@ -104,6 +107,9 @@ typedef enum {
     GESTURE_TILT_HEAD,  /* 歪头 */
     GESTURE_LISTEN,     /* 倾听位（侧头） */
     GESTURE_HOME,       /* 回正 */
+    GESTURE_SAD,        /* 低头委屈 */
+    GESTURE_SURPRISED,  /* 仰头惊讶 */
+    GESTURE_SLEEPY,     /* 打瞌睡（缓慢垂头） */
 } gesture_event_id_t;
 
 #ifdef __cplusplus

@@ -1,0 +1,11 @@
+menu "Face Service Configuration"
+
+    config SVC_FACE_ENABLE
+        bool "Enable face service (OLED expressions)"
+        default y
+        depends on DRV_DISPLAY_ENABLE
+        help
+            Render cute robot face (eyes/blink/talk mouth) on the OLED,
+            driven by conversation state events.
+
+endmenu

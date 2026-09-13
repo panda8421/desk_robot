@@ -44,12 +44,13 @@ extern "C" {
 #define BOARD_I2S_SDOUT_GPIO        GPIO_NUM_10  /* 播放数据（S3 DSDIN -> ES8388 DAC） */
 #define BOARD_ES8388_I2C_ADDR       0x10         /* ES8388 7 位从机地址 */
 
-/* ============== 预留：显示屏引脚（后续填充） ============== */
-/* #define BOARD_DISPLAY_SCLK_GPIO    GPIO_NUM_XX */
-/* #define BOARD_DISPLAY_MOSI_GPIO    GPIO_NUM_XX */
-/* #define BOARD_DISPLAY_CS_GPIO      GPIO_NUM_XX */
-/* #define BOARD_DISPLAY_DC_GPIO      GPIO_NUM_XX */
-/* #define BOARD_DISPLAY_RST_GPIO     GPIO_NUM_XX */
+/* ============== OLED 显示屏（0.96" SSD1306 128x64，独立 I2C，P1 排针引出） ============== */
+#define BOARD_OLED_SDA_GPIO         GPIO_NUM_47  /* P1 排针 pin14 */
+#define BOARD_OLED_SCL_GPIO         GPIO_NUM_48  /* P1 排针 pin13 */
+#define BOARD_OLED_I2C_FREQ_HZ      400000       /* 独立总线，可全速 */
+#define BOARD_OLED_I2C_ADDR         0x3C         /* 7 位地址（SA0=0，个别模组为 0x3D） */
+#define BOARD_OLED_WIDTH            128
+#define BOARD_OLED_HEIGHT           64
 
 /* ============== 预留：摄像头引脚（后续填充） ============== */
 /* DVP 摄像头引脚较多，确定型号后在此定义 */

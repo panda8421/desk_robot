@@ -23,7 +23,7 @@ esp_err_t svc_behavior_deinit(void);
 
 /**
  * @brief  播放指定动作（立即抢占当前动画）
- * @param  g  动作 ID（GESTURE_NOD/SHAKE/TILT_HEAD/LISTEN/HOME）
+ * @param  g  动作 ID（GESTURE_NOD/SHAKE/TILT_HEAD/LISTEN/HOME/SAD/SURPRISED/SLEEPY）
  */
 esp_err_t svc_behavior_play(gesture_event_id_t g);
 
@@ -33,7 +33,7 @@ esp_err_t svc_behavior_play(gesture_event_id_t g);
 void svc_behavior_abort(void);
 
 /**
- * @brief  注册控制台命令（gesture <nod|shake|tilt|listen|home>）
+ * @brief  注册控制台命令（gesture <nod|shake|tilt|listen|home|sad|surprised|sleepy>）
  */
 void svc_behavior_register_console_cmds(void);
 

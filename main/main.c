@@ -27,6 +27,9 @@
 #if CONFIG_DRV_DISPLAY_ENABLE
 #include "drv_display.h"
 #endif
+#if CONFIG_SVC_FACE_ENABLE
+#include "svc_face.h"
+#endif
 #if CONFIG_DRV_CAMERA_ENABLE
 #include "drv_camera.h"
 #endif
@@ -105,6 +108,12 @@ static void services_init(void)
     ESP_ERROR_CHECK(svc_behavior_start());
 #endif
 
+#if CONFIG_SVC_FACE_ENABLE
+    /* 表情层：订阅对话状态事件，OLED 渲染呆萌脸 */
+    ESP_ERROR_CHECK(svc_face_init());
+    ESP_ERROR_CHECK(svc_face_start());
+#endif
+
 #if CONFIG_SVC_WIFI_ENABLE
     ESP_ERROR_CHECK(svc_wifi_init());
     ESP_ERROR_CHECK(svc_wifi_start());
@@ -132,6 +141,9 @@ static void console_cmds_register(void)
     svc_pan_tilt_register_console_cmds();
 #if CONFIG_SVC_BEHAVIOR_ENABLE
     svc_behavior_register_console_cmds();
+#endif
+#if CONFIG_SVC_FACE_ENABLE
+    svc_face_register_console_cmds();
 #endif
     svc_wifi_register_console_cmds();
 #if CONFIG_DRV_XL9555_ENABLE

@@ -40,6 +40,18 @@ typedef struct {
     char    stage;                  /* 出错环节：'a'=ASR 'l'=LLM 't'=TTS */
 } chat_err_info_t;
 
+/* ---- 机器人情绪（CHAT_EMOTION 事件载荷；svc_face 预设表 / svc_behavior 联动索引） ---- */
+typedef enum {
+    EMO_NEUTRAL = 0,    /* 平静（默认，无显式情绪） */
+    EMO_HAPPY,          /* 开心 */
+    EMO_SAD,            /* 委屈 */
+    EMO_ANGRY,          /* 生气 */
+    EMO_SURPRISED,      /* 惊讶 */
+    EMO_SHY,            /* 害羞 */
+    EMO_SLEEPY,         /* 困 */
+    EMO_MAX,
+} emotion_id_t;
+
 /* ---- 对话状态机状态（CHAT_STATE_CHANGED 事件载荷） ---- */
 typedef enum {
     CHAT_STATE_BOOT = 0,        /* 上电初始化中 */

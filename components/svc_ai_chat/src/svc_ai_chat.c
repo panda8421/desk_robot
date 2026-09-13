@@ -475,9 +475,10 @@ static size_t strip_emoji(char *s)
     return (size_t)(w - s);
 }
 
-/* 提取并执行 [nod]/[shake]/[tilt] 动作标记：命中白名单则发 GESTURE_EVENT
- * 并从文本中删除标记（TTS 不念）；未识别的标记原样保留 */
-static void extract_gesture_tags(char *s)
+/* 提取并执行回复中的嵌入标记：动作 [nod]/[shake]/[tilt] → GESTURE_EVENT，
+ * 情绪 [happy]/[sad]/[angry]/[surprised]/[shy]/[sleepy] → CHAT_EMOTION；
+ * 命中白名单的标记从文本中删除（TTS 不念），未识别的原样保留 */
+static void extract_embedded_tags(char *s)
 {
     char *w = s;
     const char *r = s;
@@ -485,8 +486,8 @@ static void extract_gesture_tags(char *s)
         if (*r == '[') {
             const char *close = strchr(r, ']');
             size_t tag_len = (close != NULL) ? (size_t)(close - r - 1) : 0;
-            if (close != NULL && tag_len >= 2 && tag_len <= 7) {
-                char tag[8];
+            if (close != NULL && tag_len >= 2 && tag_len <= 9) {
+                char tag[12];
                 memcpy(tag, r + 1, tag_len);
                 tag[tag_len] = '\0';
                 int32_t gid = -1;
@@ -499,6 +500,27 @@ static void extract_gesture_tags(char *s)
                 }
                 if (gid >= 0) {
                     esp_event_post(GESTURE_EVENT, gid, NULL, 0, 0);
+                    r = close + 1;
+                    continue;
+                }
+                int32_t emo = -1;
+                if (strcmp(tag, "happy") == 0) {
+                    emo = EMO_HAPPY;
+                } else if (strcmp(tag, "sad") == 0) {
+                    emo = EMO_SAD;
+                } else if (strcmp(tag, "angry") == 0) {
+                    emo = EMO_ANGRY;
+                } else if (strcmp(tag, "surprised") == 0) {
+                    emo = EMO_SURPRISED;
+                } else if (strcmp(tag, "shy") == 0) {
+                    emo = EMO_SHY;
+                } else if (strcmp(tag, "sleepy") == 0) {
+                    emo = EMO_SLEEPY;
+                } else if (strcmp(tag, "neutral") == 0) {
+                    emo = EMO_NEUTRAL;      /* 平静：发送后被忽略，回落状态默认 */
+                }
+                if (emo >= 0) {
+                    esp_event_post(CHAT_EVENT, CHAT_EMOTION, &emo, sizeof(emo), 0);
                     r = close + 1;
                     continue;
                 }
@@ -576,7 +598,7 @@ static esp_err_t do_llm_and_tts(const char *user_text)
     if (cleaned != NULL) {
         memcpy(cleaned, reply, reply_len + 1);
         strip_emoji(cleaned);
-        extract_gesture_tags(cleaned);      /* 动作标记 → GESTURE_EVENT，从文本剔除 */
+        extract_embedded_tags(cleaned);     /* 嵌入标记 → 动作/情绪事件，从文本剔除 */
         reply = cleaned;
     }
 

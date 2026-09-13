@@ -69,6 +69,22 @@ static const gesture_step_t PROG_TILT[] = {
     { HOME_PAN, HOME_TILT + 15, 450 },
     { HOME_PAN, HOME_TILT,      120 },
 };
+/* 低头委屈：缓慢低头保持后回正 */
+static const gesture_step_t PROG_SAD[] = {
+    { HOME_PAN, HOME_TILT + 10, 420 },
+    { HOME_PAN, HOME_TILT,      150 },
+};
+/* 仰头惊讶：快速后仰一下回正 */
+static const gesture_step_t PROG_SURPRISED[] = {
+    { HOME_PAN, HOME_TILT - 10, 160 },
+    { HOME_PAN, HOME_TILT,      120 },
+};
+/* 打瞌睡：头一点点往下栽 */
+static const gesture_step_t PROG_SLEEPY[] = {
+    { HOME_PAN, HOME_TILT + 6,  450 },
+    { HOME_PAN, HOME_TILT + 12, 500 },
+    { HOME_PAN, HOME_TILT,      150 },
+};
 /* 回正 */
 static const gesture_step_t PROG_HOME[] = {
     { HOME_PAN, HOME_TILT, 0 },
@@ -80,6 +96,9 @@ static const gesture_prog_t PROGS[] = {
     [GESTURE_TILT_HEAD]  = { PROG_TILT,  2 },
     [GESTURE_LISTEN]     = { PROG_LISTEN, 1 },
     [GESTURE_HOME]       = { PROG_HOME,  1 },
+    [GESTURE_SAD]        = { PROG_SAD,   2 },
+    [GESTURE_SURPRISED]  = { PROG_SURPRISED, 2 },
+    [GESTURE_SLEEPY]     = { PROG_SLEEPY, 3 },
 };
 
 /* ---- 私有状态 ---- */
@@ -162,6 +181,22 @@ static void on_state_changed(int32_t state)
     }
 }
 
+/* 情绪 → 云台动作联动（与 svc_face 平级消费 CHAT_EMOTION；NEUTRAL 无动作） */
+static void on_emotion(int32_t emo)
+{
+    static const gesture_event_id_t map[EMO_MAX] = {
+        [EMO_HAPPY]     = GESTURE_NOD,          /* 开心：点头 */
+        [EMO_SAD]       = GESTURE_SAD,          /* 委屈：低头 */
+        [EMO_ANGRY]     = GESTURE_SHAKE,        /* 生气：摇头 */
+        [EMO_SURPRISED] = GESTURE_SURPRISED,    /* 惊讶：后仰 */
+        [EMO_SHY]       = GESTURE_TILT_HEAD,    /* 害羞：歪头 */
+        [EMO_SLEEPY]    = GESTURE_SLEEPY,       /* 困：打瞌睡 */
+    };
+    if (emo > (int32_t)EMO_NEUTRAL && emo < (int32_t)EMO_MAX) {
+        svc_behavior_play(map[emo]);
+    }
+}
+
 static void event_dispatch(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg;
@@ -170,6 +205,8 @@ static void event_dispatch(void *arg, esp_event_base_t base, int32_t id, void *d
     }
     if (base == CHAT_EVENT && id == CHAT_STATE_CHANGED) {
         on_state_changed(*(int32_t *)data);
+    } else if (base == CHAT_EVENT && id == CHAT_EMOTION) {
+        on_emotion(*(int32_t *)data);
     } else if (base == GESTURE_EVENT) {
         svc_behavior_play((gesture_event_id_t)id);
     } else if (base == PAN_TILT_EVENT && id == PAN_TILT_MANUAL_CMD) {
@@ -205,6 +242,9 @@ esp_err_t svc_behavior_start(void)
                             CHAT_EVENT, CHAT_STATE_CHANGED, event_dispatch, NULL, NULL),
                         TAG, "sub chat state failed");
     ESP_RETURN_ON_ERROR(esp_event_handler_instance_register(
+                            CHAT_EVENT, CHAT_EMOTION, event_dispatch, NULL, NULL),
+                        TAG, "sub emotion failed");
+    ESP_RETURN_ON_ERROR(esp_event_handler_instance_register(
                             GESTURE_EVENT, ESP_EVENT_ANY_ID, event_dispatch, NULL, NULL),
                         TAG, "sub gesture failed");
     ESP_RETURN_ON_ERROR(esp_event_handler_instance_register(
@@ -239,11 +279,11 @@ esp_err_t svc_behavior_deinit(void)
     return ESP_OK;
 }
 
-/* ============== 控制台命令：gesture <nod|shake|tilt|listen|home> ============== */
+/* ============== 控制台命令：gesture <动作名> ============== */
 static int cmd_gesture(int argc, char **argv)
 {
     if (argc != 2) {
-        printf("usage: gesture <nod|shake|tilt|listen|home>\n");
+        printf("usage: gesture <nod|shake|tilt|listen|home|sad|surprised|sleepy>\n");
         return 1;
     }
     gesture_event_id_t g;
@@ -257,6 +297,12 @@ static int cmd_gesture(int argc, char **argv)
         g = GESTURE_LISTEN;
     } else if (strcmp(argv[1], "home") == 0) {
         g = GESTURE_HOME;
+    } else if (strcmp(argv[1], "sad") == 0) {
+        g = GESTURE_SAD;
+    } else if (strcmp(argv[1], "surprised") == 0) {
+        g = GESTURE_SURPRISED;
+    } else if (strcmp(argv[1], "sleepy") == 0) {
+        g = GESTURE_SLEEPY;
     } else {
         printf("unknown gesture: %s\n", argv[1]);
         return 1;
@@ -273,7 +319,7 @@ void svc_behavior_register_console_cmds(void)
 {
     const esp_console_cmd_t cmd = {
         .command = "gesture",
-        .help = "Play a gesture: gesture <nod|shake|tilt|listen|home>",
+        .help = "Play a gesture: gesture <nod|shake|tilt|listen|home|sad|surprised|sleepy>",
         .func = cmd_gesture,
     };
     if (console_cmd_add(&cmd) != ESP_OK) {
