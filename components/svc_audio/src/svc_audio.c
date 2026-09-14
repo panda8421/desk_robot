@@ -120,6 +120,10 @@ static uint64_t frame_energy(const int16_t *data, size_t samples);  /* 定义见
 #ifndef CONFIG_SVC_WAKEWORD_STOCK_CMDS
 #define CONFIG_SVC_WAKEWORD_STOCK_CMDS 0
 #endif
+/* 离线自检默认关闭：同步跑 detect 会阻塞事件循环数秒（task_wdt + relisten 拖迟） */
+#ifndef CONFIG_SVC_AUDIO_WW_SELFTEST
+#define CONFIG_SVC_AUDIO_WW_SELFTEST 0
+#endif
 
 /**
  * @brief  命令表模式（A/B 诊断）：Kconfig 为默认值，NVS 中的 "ww_stock" 可覆盖。
@@ -338,6 +342,7 @@ consume:
     s_ctx.mn_fill -= s_ctx.mn_chunk_size;
 }
 
+#if CONFIG_SVC_AUDIO_WW_SELFTEST
 /**
  * @brief  离线自检：把一段 PCM 完整回喂 MultiNet（无实时压力、无丢帧），
  *         用于区分"喂链路问题"还是"模型/命令词问题"
@@ -409,6 +414,7 @@ static void ww_selftest_pcm(const int16_t *pcm, size_t samples)
     s_ctx.multinet->clean(s_ctx.mn_data);
     xSemaphoreGive(s_ctx.ww_model_lock);
 }
+#endif /* CONFIG_SVC_AUDIO_WW_SELFTEST */
 
 #endif /* CONFIG_SVC_WAKEWORD_ENABLE */
 
@@ -570,7 +576,7 @@ static void session_end(void)
     ESP_LOGI(TAG, "session end: total=%.1fs valid=%.1fs",
              (float)s_ctx.rec_total / DRV_AUDIO_SAMPLE_RATE,
              (float)s_ctx.rec_valid / DRV_AUDIO_SAMPLE_RATE);
-#if CONFIG_SVC_WAKEWORD_ENABLE
+#if CONFIG_SVC_WAKEWORD_ENABLE && CONFIG_SVC_AUDIO_WW_SELFTEST
     /* 离线自检：把本次录音完整回喂 MultiNet（无实时压力、无丢帧），
      * 喊"泡泡 xxx"后按 KEY0 触发一次对话即可验证 */
     ww_selftest_pcm(s_ctx.rec_buf, s_ctx.rec_valid);
@@ -778,7 +784,7 @@ void svc_audio_set_vad_threshold(uint32_t thr)
 
 void svc_audio_ww_test_pcm(const int16_t *pcm, size_t samples)
 {
-#if CONFIG_SVC_WAKEWORD_ENABLE
+#if CONFIG_SVC_WAKEWORD_ENABLE && CONFIG_SVC_AUDIO_WW_SELFTEST
     ww_selftest_pcm(pcm, samples);
 #else
     (void)pcm;

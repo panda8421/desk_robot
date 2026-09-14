@@ -65,4 +65,14 @@ menu "Audio Frontend Service Configuration"
             via console "audio ww <stock|custom>" (persists in NVS, applies
             after reboot).
 
+    config SVC_AUDIO_WW_SELFTEST
+        bool "Feed TTS/recorded audio back to MultiNet for diagnosis"
+        default n
+        depends on SVC_WAKEWORD_ENABLE
+        help
+            Diagnostic hook: replays TTS output and finished recordings
+            through MultiNet offline. Runs synchronously in the event loop
+            task and blocks it for seconds (triggers task_wdt and delays
+            relisten), so keep it off unless debugging the wake word chain.
+
 endmenu
