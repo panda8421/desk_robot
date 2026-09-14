@@ -11,6 +11,8 @@
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_console.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "driver/i2c_master.h"
 #include "board.h"
 #include "console_cmd.h"
@@ -77,7 +79,9 @@ static drv_es8388_ctx_t s_ctx;
 static esp_err_t reg_write(uint8_t reg, uint8_t val)
 {
     uint8_t buf[2] = { reg, val };
-    return i2c_master_transmit(s_ctx.dev, buf, sizeof(buf), I2C_TIMEOUT_MS);
+    esp_err_t ret = i2c_master_transmit(s_ctx.dev, buf, sizeof(buf), I2C_TIMEOUT_MS);
+    board_i2c_bus_check(ret);
+    return ret;
 }
 
 esp_err_t drv_es8388_read_reg(uint8_t reg, uint8_t *val)
@@ -88,6 +92,7 @@ esp_err_t drv_es8388_read_reg(uint8_t reg, uint8_t *val)
     esp_err_t ret = i2c_master_transmit_receive(s_ctx.dev, &reg, 1, val, 1,
                                                 I2C_TIMEOUT_MS);
     board_i2c_unlock();
+    board_i2c_bus_check(ret);
     return ret;
 }
 
@@ -166,7 +171,15 @@ esp_err_t drv_es8388_init(void)
     s_ctx.muted = false;
     s_ctx.speaker_mode = true;
 
+    /* 总线挂死时（如 wifi RF 干扰打断上电序列）先恢复再重试一次 */
     esp_err_t ret = chip_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "chip init failed (%s), recover bus and retry once",
+                 esp_err_to_name(ret));
+        board_i2c_bus_check(ESP_FAIL);      /* 强制走一次总线恢复 */
+        vTaskDelay(pdMS_TO_TICKS(50));
+        ret = chip_init();
+    }
     ESP_RETURN_ON_ERROR(ret, TAG, "es8388 chip init failed");
 
     s_ctx.initialized = true;

@@ -81,6 +81,14 @@ i2c_master_bus_handle_t board_i2c_bus(void);
 void board_i2c_lock(void);
 void board_i2c_unlock(void);
 
+/**
+ * @brief  I2C 总线健康检查（各驱动每次事务后调用）
+ * @note   连续 3 次事务失败（间隔 >2s 节流）判定总线挂死（如 wifi RF 干扰
+ *         打断事务导致 SDA 被从机拉死），自动做 9 时钟解卡 + FSM 复位；
+ *         err=ESP_OK 时清零计数，偶发丢事务不会触发恢复
+ */
+void board_i2c_bus_check(esp_err_t err);
+
 #ifdef __cplusplus
 }
 #endif

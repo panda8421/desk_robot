@@ -71,6 +71,13 @@ esp_err_t svc_audio_play_tone(svc_tone_id_t id);
 /* ---- 调试接口 ---- */
 void svc_audio_set_vad_threshold(uint32_t thr);     /* 设置 VAD 能量门限 */
 
+/**
+ * @brief  离线自检：把一段 16kHz/16bit/mono PCM 完整回喂 MultiNet 并打印结果
+ * @note   非实时路径（无丢帧压力），用于定位"音频特性问题"还是"模型问题"；
+ *         伪唤醒功能关闭时为空操作
+ */
+void svc_audio_ww_test_pcm(const int16_t *pcm, size_t samples);
+
 #ifdef __cplusplus
 }
 #endif

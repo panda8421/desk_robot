@@ -784,6 +784,20 @@ esp_err_t svc_ai_chat_get_tts_data(const int16_t **pcm, size_t *samples)
     return ESP_OK;
 }
 
+esp_err_t svc_ai_chat_say(const char *text)
+{
+    ESP_RETURN_ON_FALSE(s_ctx.initialized, ESP_ERR_INVALID_STATE, TAG, "not initialized");
+    ESP_RETURN_ON_FALSE(text != NULL && strlen(text) > 0, ESP_ERR_INVALID_ARG, TAG,
+                        "empty text");
+    /* 调试：跳过 ASR/LLM，直接合成指定文本（阻塞，控制台任务上下文），
+     * 成功后发布 CHAT_TTS_READY 由状态机播放 */
+    esp_err_t ret = do_tts(text);
+    if (ret == ESP_OK) {
+        esp_event_post(CHAT_EVENT, CHAT_TTS_READY, NULL, 0, 0);
+    }
+    return ret;
+}
+
 esp_err_t svc_ai_chat_set_api_key(const char *key)
 {
     ESP_RETURN_ON_FALSE(key != NULL && strlen(key) > 0, ESP_ERR_INVALID_ARG, TAG,
@@ -887,7 +901,7 @@ esp_err_t svc_ai_chat_deinit(void)
 static int cmd_chat(int argc, char **argv)
 {
     if (argc < 2) {
-        printf("usage: chat <setkey <key>|ask <text>|status|reset>\n");
+        printf("usage: chat <setkey <key>|ask <text>|say <text>|status|reset>\n");
         return 1;
     }
     if (strcmp(argv[1], "setkey") == 0 && argc >= 3) {
@@ -903,6 +917,30 @@ static int cmd_chat(int argc, char **argv)
             return 1;
         }
         printf("request queued, see logs\n");
+    } else if (strcmp(argv[1], "say") == 0 && argc >= 3) {
+        /* 调试：合成指定文本（TTS 就绪后会先跑 ww 离线自检再播放） */
+        size_t len = 1;
+        for (int i = 2; i < argc; i++) {
+            len += strlen(argv[i]) + 1;
+        }
+        char *text = malloc(len);
+        if (text == NULL) {
+            printf("oom\n");
+            return 1;
+        }
+        text[0] = '\0';
+        for (int i = 2; i < argc; i++) {
+            strcat(text, argv[i]);
+            if (i < argc - 1) {
+                strcat(text, " ");
+            }
+        }
+        esp_err_t err = svc_ai_chat_say(text);
+        free(text);
+        if (err != ESP_OK) {
+            printf("tts failed: %s\n", esp_err_to_name(err));
+            return 1;
+        }
     } else if (strcmp(argv[1], "reset") == 0) {
         svc_ai_chat_reset_context();
         printf("context reset\n");
@@ -921,7 +959,7 @@ void svc_ai_chat_register_console_cmds(void)
 {
     const esp_console_cmd_t cmd = {
         .command = "chat",
-        .help = "AI chat: chat <setkey|ask|status|reset>",
+        .help = "AI chat: chat <setkey|ask|say|status|reset>",
         .func = cmd_chat,
     };
     if (console_cmd_add(&cmd) != ESP_OK) {
@@ -948,6 +986,10 @@ esp_err_t svc_ai_chat_ask(const char *user_text)
 esp_err_t svc_ai_chat_get_tts_data(const int16_t **pcm, size_t *samples)
 {
     (void)pcm; (void)samples; return ESP_ERR_NOT_SUPPORTED;
+}
+esp_err_t svc_ai_chat_say(const char *text)
+{
+    (void)text; return ESP_ERR_NOT_SUPPORTED;
 }
 esp_err_t svc_ai_chat_set_api_key(const char *key)  { (void)key; return ESP_ERR_NOT_SUPPORTED; }
 esp_err_t svc_ai_chat_reset_context(void)           { return ESP_OK; }

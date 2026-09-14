@@ -45,6 +45,12 @@ esp_err_t svc_ai_chat_ask(const char *user_text);
 esp_err_t svc_ai_chat_get_tts_data(const int16_t **pcm, size_t *samples);
 
 /**
+ * @brief  直接合成指定文本并发布 CHAT_TTS_READY（调试用，阻塞）
+ * @note   跳过 ASR/LLM；在控制台任务上下文阻塞数秒
+ */
+esp_err_t svc_ai_chat_say(const char *text);
+
+/**
  * @brief  写入 DashScope API Key（存 NVS，掉电保持）
  */
 esp_err_t svc_ai_chat_set_api_key(const char *key);

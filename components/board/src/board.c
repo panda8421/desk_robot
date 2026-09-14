@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_check.h"
 #include "esp_event.h"
+#include "esp_timer.h"
 #include "esp_rom_sys.h"
 #include "nvs_flash.h"
 #include "driver/i2c_master.h"
@@ -126,6 +127,45 @@ void board_i2c_unlock(void)
 {
     if (s_i2c_mutex != NULL) {
         xSemaphoreGive(s_i2c_mutex);
+    }
+}
+
+void board_i2c_bus_check(esp_err_t err)
+{
+    static uint32_t fail_cnt = 0;
+    static int64_t last_recover_us = 0;
+
+    if (err == ESP_OK) {
+        fail_cnt = 0;
+        return;
+    }
+    if (err == ESP_ERR_INVALID_STATE || s_i2c_bus == NULL) {
+        return;                         /* 总线未就绪等，与总线健康无关 */
+    }
+    fail_cnt++;
+    int64_t now = esp_timer_get_time();
+    if (fail_cnt < 3 || now - last_recover_us < 2000000) {
+        return;                         /* 偶发丢事务 / 节流期内 */
+    }
+    last_recover_us = now;
+    fail_cnt = 0;
+
+    /* 双保险恢复（持锁序列化，确保无事务在途）：
+     * 1) GPIO 级 9 时钟解卡 —— i2c_master_bus_reset 内部的解卡对
+     *    "从机死锁拉低 SDA"无效（实测 reset 返回成功但事务仍失败）；
+     * 2) i2c_master_bus_reset 把引脚从 GPIO 模式重挂回外设并复位 FSM */
+    board_i2c_lock();
+    esp_err_t rec = i2c_bus_recovery();
+    esp_err_t rst = i2c_master_bus_reset(s_i2c_bus);
+    board_i2c_unlock();
+
+    if (rec != ESP_OK) {
+        ESP_LOGE(TAG, "i2c bus STUCK: SDA low after 9 clocks, "
+                      "check slave power/wiring, power cycle recommended");
+    } else if (rst != ESP_OK) {
+        ESP_LOGE(TAG, "i2c bus reset failed: %s", esp_err_to_name(rst));
+    } else {
+        ESP_LOGI(TAG, "i2c bus recovered");
     }
 }
 

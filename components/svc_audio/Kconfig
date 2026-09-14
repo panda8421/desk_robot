@@ -26,4 +26,43 @@ menu "Audio Frontend Service Configuration"
             Continuous silence duration after speech that ends an
             utterance (endpointing delay).
 
+    config SVC_WAKEWORD_ENABLE
+        bool "Enable offline pseudo wake word (esp-sr MultiNet command)"
+        default n
+        depends on SVC_AUDIO_ENABLE
+        help
+            Feed mic audio to esp-sr MultiNet while idle and treat the
+            command phrase as a wake word (posts AUDIO_WAKE_WORD_DETECTED).
+            Requires a "model" flash partition holding the mn6_cn model.
+
+    config SVC_WAKEWORD_PHRASE
+        string "Wake word command phrase"
+        default "pao pao"
+        depends on SVC_WAKEWORD_ENABLE
+        help
+            Command phrase used as the wake word. mn6_cn only accepts
+            PINYIN format: lowercase syllables separated by spaces
+            (e.g. "pao pao"), Chinese characters are rejected by the
+            model ("Command is invalid").
+
+    config SVC_WAKEWORD_THRESHOLD
+        int "Wake word detection threshold (percent)"
+        default 50
+        range 10 99
+        depends on SVC_WAKEWORD_ENABLE
+        help
+            MultiNet detection threshold in percent (50 = 0.50). Higher
+            values reduce false wakes but also miss soft utterances.
+
+    config SVC_WAKEWORD_STOCK_CMDS
+        bool "Use model built-in command table (skip FST rebuild)"
+        default n
+        depends on SVC_WAKEWORD_ENABLE
+        help
+            Diagnostic A/B switch: y keeps the model's stock command FST
+            (312 built-in phrases, e.g. "da kai kong tiao") and skips the
+            runtime esp_mn_commands_update() rebuild. Switchable at runtime
+            via console "audio ww <stock|custom>" (persists in NVS, applies
+            after reboot).
+
 endmenu

@@ -37,8 +37,9 @@ esp_err_t drv_audio_init(const drv_audio_cfg_t *cfg)
         return ESP_ERR_INVALID_STATE;
     }
 
-    uint8_t desc_num  = cfg ? cfg->dma_desc_num  : 3;
-    uint8_t frame_num = cfg ? cfg->dma_frame_num : 240;   /* 240 帧 @16k ≈ 15ms */
+    int desc_num  = cfg ? cfg->dma_desc_num  : 6;
+    int frame_num = cfg ? cfg->dma_frame_num : 480;   /* 2880 采样 @16k ≈ 180ms，
+                                                       * 给唤醒期追赶调度抖动留余量 */
 
     /* 标准模式下单 FIFO 通道即可全双工（tx/rx 共用一个 chanel 组） */
     i2s_chan_config_t chan_cfg = {
@@ -147,9 +148,13 @@ esp_err_t drv_audio_read(int16_t *buf, size_t samples, uint32_t timeout_ms)
     size_t want = samples * sizeof(int16_t);
     esp_err_t ret = i2s_channel_read(s_ctx.rx_handle, buf, want, &bytes_read,
                                      (TickType_t)timeout_ms);
-    ESP_RETURN_ON_ERROR(ret, TAG, "read failed");
-    if (bytes_read < want) {
-        /* 超时/未读满：不足部分不保证有效，返回超时语义 */
+    if (ret != ESP_OK && ret != ESP_ERR_TIMEOUT) {
+        ESP_LOGE(TAG, "read failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    if (ret != ESP_OK || bytes_read < want) {
+        /* 超时/未读满：不足部分不保证有效，返回超时语义（调用方常用来
+         * 探测积压，属正常流程，不打错误日志） */
         return ESP_ERR_TIMEOUT;
     }
 

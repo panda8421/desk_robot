@@ -15,6 +15,7 @@ static const char *TAG = "svc_wifi";
 typedef struct {
     bool            initialized;
     bool            running;
+    bool            got_ip;         /* 已获取 IP（事件缓存，供晚注册者查询） */
     esp_netif_t    *netif;
     int             retry_cnt;
 } svc_wifi_ctx_t;
@@ -35,11 +36,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
             ESP_LOGW(TAG, "retry connect (%d/%d)", s_ctx.retry_cnt, CONFIG_SVC_WIFI_MAX_RETRY);
         } else {
             ESP_LOGE(TAG, "connect failed after %d retries", s_ctx.retry_cnt);
+            s_ctx.got_ip = false;
             esp_event_post(APP_WIFI_EVENT, WIFI_DISCONNECTED, NULL, 0, 0);
         }
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)data;
         s_ctx.retry_cnt = 0;
+        s_ctx.got_ip = true;
         ESP_LOGI(TAG, "got ip: " IPSTR, IP2STR(&event->ip_info.ip));
         /* 路由器下发的 DNS 代理时好时坏，改用公共 DNS（主:阿里 备:114），
          * 避免偶发 getaddrinfo EAI_NONAME 导致云端请求全部失败 */
@@ -121,6 +124,11 @@ esp_err_t svc_wifi_deinit(void)
     s_ctx.initialized = false;
     s_ctx.running = false;
     return ESP_OK;
+}
+
+bool svc_wifi_is_connected(void)
+{
+    return s_ctx.got_ip;
 }
 
 void svc_wifi_register_console_cmds(void)

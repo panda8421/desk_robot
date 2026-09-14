@@ -54,7 +54,9 @@ static drv_xl9555_ctx_t s_ctx;
 static esp_err_t reg_write(uint8_t reg, uint8_t val)
 {
     uint8_t buf[2] = { reg, val };
-    return i2c_master_transmit(s_ctx.dev, buf, sizeof(buf), I2C_TIMEOUT_MS);
+    esp_err_t ret = i2c_master_transmit(s_ctx.dev, buf, sizeof(buf), I2C_TIMEOUT_MS);
+    board_i2c_bus_check(ret);
+    return ret;
 }
 
 /* 读寄存器：写地址 + 读数据两段事务，必须持总线锁保证原子性 */
@@ -64,6 +66,7 @@ static esp_err_t reg_read(uint8_t reg, uint8_t *val)
     esp_err_t ret = i2c_master_transmit_receive(s_ctx.dev, &reg, 1, val, 1,
                                                 I2C_TIMEOUT_MS);
     board_i2c_unlock();
+    board_i2c_bus_check(ret);
     return ret;
 }
 
@@ -218,7 +221,9 @@ esp_err_t drv_xl9555_start(void)
         return ESP_OK;
     }
     s_ctx.running = true;
-    BaseType_t ok = xTaskCreate(key_scan_task, "key_scan", 2048, NULL,
+    /* 栈给足：任务内直接调 i2c_master API，其内部调用链深（含错误日志路径），
+     * 2048 在 I2C 事务失败时实测栈溢出 */
+    BaseType_t ok = xTaskCreate(key_scan_task, "key_scan", 4096, NULL,
                                 tskIDLE_PRIORITY + 2, &s_ctx.scan_task);
     ESP_RETURN_ON_FALSE(ok == pdTRUE, ESP_FAIL, TAG, "create key_scan task failed");
     ESP_LOGI(TAG, "started");

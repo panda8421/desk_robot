@@ -1,0 +1,4 @@
+dependencies:
+  # 离线唤醒词检测（MultiNet 命令词）；项目已升级 IDF 5.5.5，解锁 2.x
+  # （1.9.5 预编译库在 IDF 5.5 下 MultiNet 检测恒无输出，2.x 官方支持 IDF 5.5）
+  espressif/esp-sr: "^2.5.0"

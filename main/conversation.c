@@ -20,6 +20,7 @@
 #include "svc_audio.h"
 #include "svc_ai_chat.h"
 #include "svc_status.h"
+#include "svc_wifi.h"
 
 static const char *TAG = "conversation";
 
@@ -116,6 +117,17 @@ static void arm_timeout(uint64_t ms)
 
 /* ============== 事件处理 ============== */
 
+/* ---- 开始对话（KEY0 与语音唤醒共用入口） ---- */
+static void start_listening(void)
+{
+    ESP_LOGI(TAG, "start conversation");
+    svc_audio_play_tone(SVC_TONE_WAKE);
+    set_state(CHAT_STATE_LISTENING);
+    arm_timeout(LISTEN_TIMEOUT_MS);
+    /* 提示音与录音错开：避免咪头录到嘟嘟声污染 VAD/ASR */
+    esp_timer_start_once(s_ctx.rec_delay_timer, REC_DELAY_MS * 1000);
+}
+
 /* ---- KEY_EVENT：KEY0 开始对话 / KEY1 打断播放 / KEY2 清空上下文 ---- */
 static void on_key(int32_t id, void *data)
 {
@@ -124,12 +136,7 @@ static void on_key(int32_t id, void *data)
         return;
     }
     if (key == 0 && s_ctx.state == CHAT_STATE_STANDBY) {
-        ESP_LOGI(TAG, "KEY0: start conversation");
-        svc_audio_play_tone(SVC_TONE_WAKE);
-        set_state(CHAT_STATE_LISTENING);
-        arm_timeout(LISTEN_TIMEOUT_MS);
-        /* 提示音与录音错开：避免咪头录到嘟嘟声污染 VAD/ASR */
-        esp_timer_start_once(s_ctx.rec_delay_timer, REC_DELAY_MS * 1000);
+        start_listening();
     } else if (key == 1 && s_ctx.state == CHAT_STATE_SPEAKING) {
         ESP_LOGI(TAG, "KEY1: interrupt playback");
         svc_audio_stop_play();      /* DONE 事件负责回 STANDBY */
@@ -144,6 +151,14 @@ static void on_audio(int32_t id, void *data)
 {
     (void)data;
     switch (id) {
+    case AUDIO_WAKE_WORD_DETECTED:
+        /* 伪唤醒：待机时喊出命令词（默认"泡泡"），等价 KEY0 */
+        if (s_ctx.state == CHAT_STATE_STANDBY) {
+            ESP_LOGI(TAG, "wake word: start conversation");
+            start_listening();
+        }
+        break;
+
     case AUDIO_VAD_SPEECH_START:
         ESP_LOGI(TAG, "vad: speech start");
         break;
@@ -224,6 +239,9 @@ static void on_chat(int32_t id, void *data)
     }
 
     case CHAT_TTS_READY: {
+        /* 入口日志：TTS 就绪事件是否到达、到达时状态机处于什么状态，
+         * 用于排查"事件静默跳过"（如状态机卡在 NET_WAIT） */
+        ESP_LOGI(TAG, "tts ready (state=%d)", (int)s_ctx.state);
         /* THINKING：语音流程；STANDBY：控制台 chat ask 直调（绕过状态机） */
         if (s_ctx.state != CHAT_STATE_THINKING &&
             s_ctx.state != CHAT_STATE_STANDBY) {
@@ -236,6 +254,9 @@ static void on_chat(int32_t id, void *data)
             abort_to_standby(true);
             break;
         }
+        /* 调试：TTS 录音棚级音频先喂 MultiNet 自检（阻塞数秒），
+         * 用于二分"麦克风通路问题"还是"模型问题"，定位后移除 */
+        svc_audio_ww_test_pcm(pcm, samples);
         esp_timer_stop(s_ctx.timeout_timer);
         svc_audio_play_pcm(pcm, samples);   /* 完成后发 AUDIO_PLAYBACK_DONE */
         set_state(CHAT_STATE_SPEAKING);
@@ -316,6 +337,15 @@ void conversation_init(void)
 
     s_ctx.state = CHAT_STATE_NET_WAIT;
     ESP_LOGI(TAG, "conversation state machine ready");
+
+    /* 启动竞态兜底：svc_wifi_start 先于本函数执行，若 WiFi 已在 handler
+     * 注册之前拿到 IP，GOT_IP 事件会被静默丢弃，状态机将永远停在 NET_WAIT，
+     * 后续 TTS_READY/唤醒词/按键全部被状态门静默跳过。此处查询真实连接
+     * 状态主动补齐，晚到联网仍走正常 on_wifi 流程 */
+    if (svc_wifi_is_connected()) {
+        ESP_LOGI(TAG, "network ready (late join)");
+        set_state(CHAT_STATE_STANDBY);
+    }
 }
 
 void conversation_reset(void)
