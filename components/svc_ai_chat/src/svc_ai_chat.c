@@ -93,7 +93,40 @@ static void post_chat_error(int32_t code, char stage)
     esp_event_post(CHAT_EVENT, CHAT_ERROR, &payload, sizeof(payload), 0);
 }
 
-/* ============== HTTP 通用请求（TLS 证书走 esp_crt_bundle） ============== */
+/* ============== HTTP 通用请求（长连接复用，TLS 证书走 esp_crt_bundle） ============== */
+/* ASR/LLM/TTS 三个 POST 同一 API 主机 → 共用一个持久客户端；
+ * TTS 音频 GET 主机不同 → 单独一个。set_url 跨主机会自动断开重连，
+ * 同主机则复用 TLS 连接，省去每轮 3~4 次握手（实测每次 ~0.4s） */
+static esp_http_client_handle_t s_api_client;
+static esp_http_client_handle_t s_audio_client;
+
+/* 取持久客户端：首次用 url 初始化，之后仅 set_url（同主机自动复用连接） */
+static esp_http_client_handle_t http_ensure(esp_http_client_handle_t *slot,
+                                            const char *url, int tx_buf)
+{
+    if (*slot != NULL) {
+        esp_http_client_set_url(*slot, url);
+        return *slot;
+    }
+    esp_http_client_config_t cfg = {
+        .url = url,
+        .timeout_ms = HTTP_TIMEOUT_MS,
+        .buffer_size = 2048,
+        .buffer_size_tx = tx_buf,
+        .crt_bundle_attach = esp_crt_bundle_attach,   /* 内置主流 CA 根证书 */
+        .keep_alive_enable = true,
+    };
+    *slot = esp_http_client_init(&cfg);
+    return *slot;
+}
+
+/* 丢弃持久连接（出错/重试/响应未读完时），下次请求重新握手 */
+static void http_drop(esp_http_client_handle_t *slot)
+{
+    if (*slot != NULL) {
+        esp_http_client_close(*slot);
+    }
+}
 
 /**
  * @brief  POST JSON 并接收响应
@@ -107,15 +140,7 @@ static void post_chat_error(int32_t code, char stage)
 static esp_err_t http_post(const char *url, const char *body,
                            uint8_t *resp_buf, size_t resp_max, size_t *resp_len)
 {
-    esp_http_client_config_t cfg = {
-        .url = url,
-        .timeout_ms = HTTP_TIMEOUT_MS,
-        .buffer_size = 2048,
-        .buffer_size_tx = 2048,
-        .crt_bundle_attach = esp_crt_bundle_attach,   /* 内置主流 CA 根证书 */
-        .keep_alive_enable = true,
-    };
-    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    esp_http_client_handle_t client = http_ensure(&s_api_client, url, 2048);
     ESP_RETURN_ON_FALSE(client != NULL, ESP_FAIL, TAG, "http init failed");
 
     char auth[160];
@@ -129,15 +154,23 @@ static esp_err_t http_post(const char *url, const char *body,
     int status = -1;
     *resp_len = 0;
 
-    if (esp_http_client_open(client, (int)strlen(body)) != ESP_OK) {
-        ESP_LOGE(TAG, "http open failed");
-        goto out;
+    /* 长连接可能已被服务端闲置断开：open/write 失败则重连后再试一次 */
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (esp_http_client_open(client, (int)strlen(body)) == ESP_OK &&
+                esp_http_client_write(client, body, (int)strlen(body)) >= 0) {
+            ret = ESP_OK;
+            break;
+        }
+        ESP_LOGW(TAG, "http open/write failed%s",
+                 attempt == 0 ? ", retry with fresh connection" : "");
+        http_drop(&s_api_client);
+        ret = ESP_FAIL;
     }
-    if (esp_http_client_write(client, body, (int)strlen(body)) < 0) {
-        ESP_LOGE(TAG, "http write failed");
-        goto out;
+    if (ret != ESP_OK) {
+        return ret;
     }
-    status = esp_http_client_fetch_headers(client);
+
+    esp_http_client_fetch_headers(client);
     status = esp_http_client_get_status_code(client);
 
     if (resp_buf != NULL) {
@@ -154,6 +187,11 @@ static esp_err_t http_post(const char *url, const char *body,
         *resp_len = got;
     }
 
+    /* 响应没读完就丢弃连接，避免残留数据污染下一次请求 */
+    if (!esp_http_client_is_complete_data_received(client)) {
+        http_drop(&s_api_client);
+    }
+
     if (status >= 200 && status < 300) {
         ret = ESP_OK;
     } else {
@@ -164,9 +202,53 @@ static esp_err_t http_post(const char *url, const char *body,
         }
         ret = ESP_FAIL;
     }
-out:
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
+    return ret;
+}
+
+/**
+ * @brief  GET 下载二进制内容（用于拉取 TTS 返回的音频 URL）
+ * @return ESP_OK（HTTP 2xx 且已读取）/ ESP_FAIL
+ */
+static esp_err_t http_get_once(const char *url, uint8_t *resp_buf,
+                               size_t resp_max, size_t *resp_len)
+{
+    esp_err_t ret = ESP_FAIL;
+    esp_http_client_handle_t client = http_ensure(&s_audio_client, url, 512);
+    ESP_RETURN_ON_FALSE(client != NULL, ESP_FAIL, TAG, "http init failed");
+
+    *resp_len = 0;
+    ESP_ERROR_CHECK(esp_http_client_set_method(client, HTTP_METHOD_GET));
+
+    if (esp_http_client_open(client, -1) != ESP_OK) {
+        ESP_LOGW(TAG, "http open failed");
+    } else {
+        esp_http_client_fetch_headers(client);
+        int status = esp_http_client_get_status_code(client);
+
+        size_t got = 0;
+        while (got < resp_max) {
+            int n = esp_http_client_read(client, (char *)resp_buf + got,
+                                         (int)(resp_max - got));
+            if (n <= 0) {
+                break;
+            }
+            got += (size_t)n;
+        }
+        *resp_len = got;
+
+        if (status < 200 || status >= 300) {
+            ESP_LOGE(TAG, "http status %d", status);
+        } else if (!esp_http_client_is_complete_data_received(client)) {
+            /* 响应没读完（传输中断）同样视为失败 */
+            ESP_LOGW(TAG, "audio response incomplete");
+        } else {
+            ret = ESP_OK;
+        }
+    }
+
+    /* 音频连接一次性使用：音频 host 闲置 ~10s 就被服务端重置，实测复用
+     * 从未成功，用完即断，下次直接新建连接，省掉"先撞失败再重试"的惩罚 */
+    http_drop(&s_audio_client);
     return ret;
 }
 
@@ -177,46 +259,14 @@ out:
 static esp_err_t http_get(const char *url, uint8_t *resp_buf,
                           size_t resp_max, size_t *resp_len)
 {
-    esp_http_client_config_t cfg = {
-        .url = url,
-        .timeout_ms = HTTP_TIMEOUT_MS,
-        .buffer_size = 2048,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-    };
-    esp_http_client_handle_t client = esp_http_client_init(&cfg);
-    ESP_RETURN_ON_FALSE(client != NULL, ESP_FAIL, TAG, "http init failed");
-
     esp_err_t ret = ESP_FAIL;
-    *resp_len = 0;
-    ESP_ERROR_CHECK(esp_http_client_set_method(client, HTTP_METHOD_GET));
-
-    if (esp_http_client_open(client, -1) != ESP_OK) {
-        ESP_LOGE(TAG, "http open failed");
-        goto out;
-    }
-    esp_http_client_fetch_headers(client);
-    int status = esp_http_client_get_status_code(client);
-
-    size_t got = 0;
-    while (got < resp_max) {
-        int n = esp_http_client_read(client, (char *)resp_buf + got,
-                                     (int)(resp_max - got));
-        if (n <= 0) {
-            break;
+    /* 下载是幂等 GET：偶发的传输中断值得整体重试一次（每次均为全新连接） */
+    for (int attempt = 0; attempt < 2 && ret != ESP_OK; attempt++) {
+        if (attempt > 0) {
+            ESP_LOGW(TAG, "audio download failed, retry");
         }
-        got += (size_t)n;
+        ret = http_get_once(url, resp_buf, resp_max, resp_len);
     }
-    *resp_len = got;
-
-    if (status >= 200 && status < 300) {
-        ret = ESP_OK;
-    } else {
-        ESP_LOGE(TAG, "http status %d", status);
-        ret = ESP_FAIL;
-    }
-out:
-    esp_http_client_close(client);
-    esp_http_client_cleanup(client);
     return ret;
 }
 
@@ -375,6 +425,12 @@ static esp_err_t do_asr(const int16_t *pcm, size_t samples)
     ret = http_post(CONFIG_SVC_AI_CHAT_ASR_API_URL, body,
                     resp, JSON_RESP_MAX, &resp_len);
     if (ret != ESP_OK) {
+        /* "没听出词"的 400 是可恢复的空识别而非链路故障：改发 CHAT_ASR_EMPTY
+         * 走提示重听；此时 resp 已被 http_post 补 '\0'，可直接检索错误码 */
+        if (strstr((const char *)resp, "ASR_RESPONSE_HAVE_NO_WORDS") != NULL) {
+            esp_event_post(CHAT_EVENT, CHAT_ASR_EMPTY, NULL, 0, 0);
+            ret = ESP_OK;
+        }
         goto cleanup_resp;
     }
 
@@ -398,6 +454,12 @@ static esp_err_t do_asr(const int16_t *pcm, size_t samples)
     }
     if (text == NULL) {
         ret = ESP_ERR_INVALID_RESPONSE;
+        cJSON_Delete(jresp);
+        goto cleanup_resp;
+    }
+    if (text[0] == '\0') {
+        ESP_LOGW(TAG, "asr result empty");
+        esp_event_post(CHAT_EVENT, CHAT_ASR_EMPTY, NULL, 0, 0);
         cJSON_Delete(jresp);
         goto cleanup_resp;
     }
@@ -893,6 +955,14 @@ esp_err_t svc_ai_chat_deinit(void)
     vQueueDelete(s_ctx.req_queue);
     free(s_ctx.tts_buf);
     s_ctx.tts_buf = NULL;
+    if (s_api_client != NULL) {
+        esp_http_client_cleanup(s_api_client);
+        s_api_client = NULL;
+    }
+    if (s_audio_client != NULL) {
+        esp_http_client_cleanup(s_audio_client);
+        s_audio_client = NULL;
+    }
     s_ctx.initialized = false;
     return ESP_OK;
 }

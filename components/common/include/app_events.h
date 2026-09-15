@@ -92,6 +92,9 @@ typedef enum {
     /* arg: chat_err_info_t*（值传递） —— 云端链路错误 */
     CHAT_ERROR,
 
+    /* arg: NULL —— ASR 未识别出有效词语（可恢复的空结果，非链路故障） */
+    CHAT_ASR_EMPTY,
+
     /* arg: int32_t*（chat_state_t 值拷贝） —— 对话状态机状态变化广播 */
     CHAT_STATE_CHANGED,
 

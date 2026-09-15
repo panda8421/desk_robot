@@ -28,7 +28,7 @@ void      svc_ai_chat_register_console_cmds(void);
  * @brief  语音识别请求（排队）
  * @param  pcm     16kHz/16bit/mono PCM（PSRAM，指向 svc_audio 录音缓冲）
  * @param  samples 采样点数；0 视为无有效语音，直接回错误事件
- * @note   完成后发布 CHAT_ASR_RESULT 或 CHAT_ERROR('a')
+ * @note   完成后发布 CHAT_ASR_RESULT / CHAT_ASR_EMPTY（未听出词）或 CHAT_ERROR('a')
  */
 esp_err_t svc_ai_chat_recognize(const int16_t *pcm, size_t samples);
 

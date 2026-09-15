@@ -27,12 +27,15 @@ static const char *TAG = "conversation";
 /* ---- 超时参数 ---- */
 #define LISTEN_TIMEOUT_MS       15000   /* LISTENING 无语音超时 */
 #define THINK_TIMEOUT_MS        30000   /* RECOGNIZING/THINKING 云端超时 */
+#define ASR_EMPTY_REPROMPT_MAX  2       /* 连续 ASR 空结果上限，超过则回待机 */
+static const char ASR_REPROMPT_TEXT[] = "我没听清，再说一遍好吗？";
 
 /* ---- 私有状态 ---- */
 typedef struct {
     volatile chat_state_t state;
     esp_timer_handle_t    timeout_timer;    /* LISTENING/THINKING 超时 */
     esp_timer_handle_t    rec_delay_timer;  /* 提示音播完后延迟开录音 */
+    uint8_t               asr_empty_cnt;    /* 连续 ASR 空结果计数 */
 } conversation_ctx_t;
 
 static conversation_ctx_t s_ctx;
@@ -115,12 +118,31 @@ static void arm_timeout(uint64_t ms)
     esp_timer_start_once(s_ctx.timeout_timer, ms * 1000);
 }
 
+/* ASR 没听出词：语音提示后重新聆听（连续空结果超过上限则回待机） */
+static void reprompt_and_relisten(void)
+{
+    if (s_ctx.asr_empty_cnt >= ASR_EMPTY_REPROMPT_MAX) {
+        ESP_LOGW(TAG, "asr empty x%d, back to standby", s_ctx.asr_empty_cnt);
+        svc_audio_play_tone(SVC_TONE_ERROR);
+        set_state(CHAT_STATE_STANDBY);
+        return;
+    }
+    s_ctx.asr_empty_cnt++;
+    ESP_LOGW(TAG, "asr empty, reprompt (%d/%d)",
+             s_ctx.asr_empty_cnt, ASR_EMPTY_REPROMPT_MAX);
+    arm_timeout(THINK_TIMEOUT_MS);
+    set_state(CHAT_STATE_THINKING);
+    /* 阻塞约 1~2s 合成提示音，成功后发 CHAT_TTS_READY → 播放 → relisten */
+    svc_ai_chat_say(ASR_REPROMPT_TEXT);
+}
+
 /* ============== 事件处理 ============== */
 
 /* ---- 开始对话（KEY0 与语音唤醒共用入口） ---- */
 static void start_listening(void)
 {
     ESP_LOGI(TAG, "start conversation");
+    s_ctx.asr_empty_cnt = 0;
     svc_audio_play_tone(SVC_TONE_WAKE);
     set_state(CHAT_STATE_LISTENING);
     arm_timeout(LISTEN_TIMEOUT_MS);
@@ -221,11 +243,10 @@ static void on_chat(int32_t id, void *data)
         }
         chat_text_t *text = (chat_text_t *)data;
         if (strlen(text->text) == 0) {
-            ESP_LOGW(TAG, "asr empty result");
-            svc_audio_play_tone(SVC_TONE_ERROR);
-            set_state(CHAT_STATE_STANDBY);
+            reprompt_and_relisten();
             break;
         }
+        s_ctx.asr_empty_cnt = 0;
         svc_ai_chat_ask(text->text);
         arm_timeout(THINK_TIMEOUT_MS);
         set_state(CHAT_STATE_THINKING);
@@ -265,6 +286,14 @@ static void on_chat(int32_t id, void *data)
 
     case CHAT_ERROR:
         abort_to_standby(true);
+        break;
+
+    case CHAT_ASR_EMPTY:
+        /* ASR 未听出词（云端 400 ASR_RESPONSE_HAVE_NO_WORDS / 空文本） */
+        if (s_ctx.state != CHAT_STATE_RECOGNIZING) {
+            break;
+        }
+        reprompt_and_relisten();
         break;
 
     default:
