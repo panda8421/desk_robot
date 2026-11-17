@@ -10,6 +10,11 @@ sdkconfig.ci
 managed_components/
 dependencies.lock
 
+# ===== 开源参考项目（仅本地借鉴用，不入库） =====
+# 用法：git clone <开源项目> reference/<项目名>
+# 注意：reference/ 不参与编译；要借鉴代码时复制到 components/ 并按本项目规范改造
+reference/
+
 # ===== 编辑器 / IDE =====
 .vscode/
 .idea/

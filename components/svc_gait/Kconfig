@@ -1,0 +1,58 @@
+menu "Gait Service Configuration"
+
+    config SVC_GAIT_ENABLE
+        bool "Enable Gait (hexapod walking) service"
+        default y
+        help
+            Send GoBLE-format packets over UART to the hexapod
+            ATmega328P controller (Vorpal-based firmware).
+
+    config SVC_GAIT_UART_NUM
+        int "UART port number"
+        default 1
+        range 0 2
+        depends on SVC_GAIT_ENABLE
+        help
+            UART_NUM_0 is reserved for the console; use UART_NUM_1.
+
+    config SVC_GAIT_TX_GPIO
+        int "TX GPIO (ESP32 -> ATmega RX)"
+        default 6
+        depends on SVC_GAIT_ENABLE
+        help
+            GPIO6 is shared with RGBLCD B7 / camera D2 on the ATK board;
+            both are unused in this project. Connect to ATmega RX (D0).
+
+    config SVC_GAIT_RX_GPIO
+        int "RX GPIO (ESP32 <- ATmega TX)"
+        default 7
+        depends on SVC_GAIT_ENABLE
+        help
+            Must go through a 5V->3.3V divider. GPIO7 is shared with
+            RGBLCD B6 / camera D3, unused in this project.
+
+    config SVC_GAIT_BAUD_RATE
+        int "UART baud rate"
+        default 115200
+        depends on SVC_GAIT_ENABLE
+
+    config SVC_GAIT_PERIOD_MS
+        int "Packet period (ms)"
+        default 50
+        depends on SVC_GAIT_ENABLE
+        help
+            ATmega stands still if no valid packet for 1s and resets the
+            link after 15s; 50ms (20Hz) keeps a comfortable margin.
+
+    config SVC_GAIT_TASK_STACK_SIZE
+        int "Task stack size (bytes)"
+        default 3072
+        depends on SVC_GAIT_ENABLE
+
+    config SVC_GAIT_TASK_PRIORITY
+        int "Task priority"
+        default 4
+        range 1 25
+        depends on SVC_GAIT_ENABLE
+
+endmenu

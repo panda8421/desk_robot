@@ -15,6 +15,7 @@
 #include "console_cmd.h"
 #include "svc_pan_tilt.h"
 #include "svc_wifi.h"
+#include "svc_gait.h"
 #include "svc_status.h"
 #include "svc_audio.h"
 #include "svc_ai_chat.h"
@@ -127,6 +128,11 @@ static void services_init(void)
     ESP_ERROR_CHECK(svc_ai_chat_init());
     ESP_ERROR_CHECK(svc_ai_chat_start());
 #endif
+#if CONFIG_SVC_GAIT_ENABLE
+    /* 步态层：UART 周期发送，持续发包维持链路（1s 无包 ATmega 自动站定） */
+    ESP_ERROR_CHECK(svc_gait_init());
+    ESP_ERROR_CHECK(svc_gait_start());
+#endif
 }
 
 /**
@@ -162,6 +168,9 @@ static void console_cmds_register(void)
 #endif
 #if CONFIG_SVC_AI_CHAT_ENABLE
     svc_ai_chat_register_console_cmds();
+#endif
+#if CONFIG_SVC_GAIT_ENABLE
+    svc_gait_register_console_cmds();
 #endif
     evt_log_register_console_cmds();
     diag_register_console_cmds();
